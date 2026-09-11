@@ -3,3 +3,7 @@ build/
 local.properties
 *.iml
 .idea/
+functions/node_modules/
+functions/lib/
+google-services.json
+serviceAccountKey.json

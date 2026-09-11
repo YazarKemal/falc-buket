@@ -1,10 +1,16 @@
 package com.prompthavenai.falcibuket.ui.screens
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -14,26 +20,32 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.prompthavenai.falcibuket.R
 import com.prompthavenai.falcibuket.data.model.ChatMessage
 import com.prompthavenai.falcibuket.ui.theme.*
+import com.prompthavenai.falcibuket.ui.viewmodel.ChatViewModel
 
 @Composable
 fun ChatScreen(nav: NavController) {
+    val vm: ChatViewModel = viewModel()
+    val state by vm.state.collectAsState()
     var input by remember { mutableStateOf("") }
-    val messages = remember {
-        mutableStateListOf(
-            ChatMessage(
-                "Hoş geldin. Bugün özellikle aşk, kariyer, para veya hayatındaki başka bir konu hakkında mı konuşmak istiyorsun?",
-                false
-            )
-        )
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(state.messages.size, state.sending) {
+        if (state.messages.isNotEmpty()) {
+            listState.animateScrollToItem(state.messages.size - 1)
+        }
     }
+
     Column(Modifier.fillMaxSize().background(NightBg).imePadding()) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -53,31 +65,29 @@ fun ChatScreen(nav: NavController) {
                 Text("Senin için burada ✨", style = MaterialTheme.typography.labelMedium, color = Gold)
             }
         }
+
+        state.error?.let { err ->
+            ErrorBanner(
+                message = err.userMessage,
+                onRetry = if (state.messages.any { it.failed }) vm::retryLastFailed else null
+            )
+        }
+
         LazyColumn(
             Modifier.weight(1f),
+            state = listState,
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(messages) { msg ->
-                Box(Modifier.fillMaxWidth(), contentAlignment = if (msg.fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
-                    Box(
-                        Modifier
-                            .widthIn(max = 300.dp)
-                            .clip(
-                                RoundedCornerShape(
-                                    topStart = 20.dp, topEnd = 20.dp,
-                                    bottomStart = if (msg.fromUser) 20.dp else 4.dp,
-                                    bottomEnd = if (msg.fromUser) 4.dp else 20.dp
-                                )
-                            )
-                            .background(if (msg.fromUser) GoldDeep else SurfacePlum)
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        Text(msg.text, color = if (msg.fromUser) TextCream else TextCream, style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
+            if (state.loading && state.messages.isEmpty()) {
+                item { Text("Buket geliyor…", color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
+            }
+            items(state.messages) { msg -> MessageBubble(msg) }
+            if (state.sending) {
+                item { TypingIndicator() }
             }
         }
+
         Row(
             Modifier.fillMaxWidth().padding(12.dp)
                 .clip(RoundedCornerShape(24.dp))
@@ -90,25 +100,79 @@ fun ChatScreen(nav: NavController) {
                 onValueChange = { input = it },
                 placeholder = { Text("Buket'e bir şey anlat...", color = TextMuted) },
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = ColorTransparent,
-                    unfocusedContainerColor = ColorTransparent,
-                    focusedIndicatorColor = ColorTransparent,
-                    unfocusedIndicatorColor = ColorTransparent
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
                 ),
                 modifier = Modifier.weight(1f)
             )
             IconButton(
                 onClick = {
-                    if (input.isNotBlank()) {
-                        messages.add(ChatMessage(input.trim(), true))
-                        input = ""
-                    }
-                }
+                    vm.send(input)
+                    input = ""
+                },
+                enabled = input.isNotBlank() && !state.sending
             ) {
-                Icon(Icons.AutoMirrored.Filled.Send, "Gönder", tint = Gold)
+                Icon(
+                    Icons.AutoMirrored.Filled.Send, "Gönder",
+                    tint = if (input.isNotBlank() && !state.sending) Gold else TextMuted
+                )
             }
         }
     }
 }
 
-private val ColorTransparent = androidx.compose.ui.graphics.Color.Transparent
+@Composable
+private fun MessageBubble(msg: ChatMessage) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = if (msg.fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
+        Box(
+            Modifier
+                .widthIn(max = 300.dp)
+                .clip(
+                    RoundedCornerShape(
+                        topStart = 20.dp, topEnd = 20.dp,
+                        bottomStart = if (msg.fromUser) 20.dp else 4.dp,
+                        bottomEnd = if (msg.fromUser) 4.dp else 20.dp
+                    )
+                )
+                .background(if (msg.fromUser) GoldDeep else SurfacePlum)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .alpha(if (msg.sending) 0.6f else 1f)
+        ) {
+            Text(msg.text, color = TextCream, style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
+
+@Composable
+private fun TypingIndicator() {
+    val transition = rememberInfiniteTransition(label = "typing")
+    val alpha by transition.animateFloat(
+        0.25f, 1f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "dot"
+    )
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 20.dp))
+            .background(SurfacePlum)
+            .padding(horizontal = 18.dp, vertical = 14.dp)
+    ) {
+        Text("Buket düşünüyor…", color = TextMuted.copy(alpha = alpha), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun ErrorBanner(message: String, onRetry: (() -> Unit)?) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Rose.copy(alpha = 0.12f))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(message, color = Rose, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        if (onRetry != null) {
+            TextButton(onClick = onRetry) { Text("Tekrar dene", color = Gold) }
+        }
+    }
+}

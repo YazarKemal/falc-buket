@@ -102,7 +102,11 @@ fun HomeScreen(nav: NavController) {
             }
         }
         item {
-            MemoryPreviewCard(memories = emptyList())
+            val memoryVm: com.prompthavenai.falcibuket.ui.viewmodel.MemoryViewModel =
+                androidx.lifecycle.viewmodel.compose.viewModel()
+            val memState by memoryVm.state.collectAsState()
+            LaunchedEffect(Unit) { memoryVm.load() }
+            MemoryPreviewCard(memories = memState.facts)
         }
         item {
             OverlayImageCard(

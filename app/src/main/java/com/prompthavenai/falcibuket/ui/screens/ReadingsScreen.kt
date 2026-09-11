@@ -9,22 +9,27 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.prompthavenai.falcibuket.R
 import com.prompthavenai.falcibuket.ui.components.pressScale
 import com.prompthavenai.falcibuket.ui.theme.*
+import com.prompthavenai.falcibuket.ui.viewmodel.ReadingsViewModel
 
 @Composable
 fun ReadingsScreen() {
-    val entries = listOf(
-        Triple("Bugünün Falı", "Bugün", R.drawable.result_background),
-        Triple("Aşk Falı", "2 gün önce", R.drawable.love_fortune),
-        Triple("Kahve Falı", "1 hafta önce", R.drawable.coffee_fortune)
-    )
+    val vm: ReadingsViewModel = viewModel()
+    val state by vm.state.collectAsState()
+    LaunchedEffect(Unit) { vm.load() }
+
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -39,24 +44,44 @@ fun ReadingsScreen() {
             Spacer(Modifier.height(12.dp))
             Text("Fallarım", style = MaterialTheme.typography.headlineMedium, color = Gold)
         }
-        items(entries) { (title, date, img) ->
+        if (state.loading && state.readings.isEmpty()) {
+            item { Text("Falların yükleniyor…", color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
+        }
+        if (!state.loading && !state.backendConfigured && state.readings.isEmpty()) {
+            item {
+                Text(
+                    "Falların bu cihazda saklanamıyor çünkü Firebase bu sürümde bağlanmadı. " +
+                        "Backend yapılandırıldığında falların burada listelenecek.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+        items(state.readings) { entry ->
             Row(
                 Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(24.dp))
                     .background(SurfacePlum)
                     .pressScale(onClick = {})
                     .padding(14.dp),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Image(
-                    painterResource(img), null,
+                    painterResource(vm.typeImage(entry.type)), null,
                     modifier = Modifier.size(72.dp).clip(RoundedCornerShape(16.dp)),
                     contentScale = ContentScale.Crop
                 )
                 Spacer(Modifier.width(16.dp))
                 Column {
-                    Text(title, style = MaterialTheme.typography.titleMedium, color = TextCream)
-                    Text(date, style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                    Text(entry.title.ifBlank { "${entry.type} Falı" }, style = MaterialTheme.typography.titleMedium, color = TextCream)
+                    Text(entry.dateLabel, style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                    if (entry.summary.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            entry.summary, style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted, maxLines = 2
+                        )
+                    }
                 }
             }
         }
