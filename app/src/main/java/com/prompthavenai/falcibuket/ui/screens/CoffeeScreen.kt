@@ -1,6 +1,8 @@
 package com.prompthavenai.falcibuket.ui.screens
 
+import android.content.pm.ApplicationInfo
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -35,11 +38,16 @@ import com.prompthavenai.falcibuket.ui.components.newCameraUri
 import com.prompthavenai.falcibuket.ui.components.uriSaver
 import com.prompthavenai.falcibuket.ui.theme.*
 import com.prompthavenai.falcibuket.ui.viewmodel.CoffeeViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun CoffeeScreen(nav: NavController) {
     val context = LocalContext.current
     val vm: CoffeeViewModel = viewModel(viewModelStoreOwner = context as androidx.lifecycle.ViewModelStoreOwner)
+    val scope = rememberCoroutineScope()
+    val isDebuggable = remember(context) {
+        (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    }
 
     var cupImage by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
     var saucerImage by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
@@ -133,6 +141,22 @@ fun CoffeeScreen(nav: NavController) {
                         nav.navigate(Routes.result("Kahve"))
                     }
                 )
+                Spacer(Modifier.height(20.dp))
+                // DEBUG-ONLY: aynı ön işleme hattını çalıştırır, Firebase'e GÖNDERMEZ.
+                if (isDebuggable) {
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                val report = vm.validatePreprocessing(cupImage, saucerImage)
+                                Toast.makeText(context, report, Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        enabled = cupImage != null,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Ön işleme testi (debug)", color = TextMuted)
+                    }
+                }
                 Spacer(Modifier.height(20.dp))
             }
         }

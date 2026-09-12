@@ -2,6 +2,7 @@ package com.prompthavenai.falcibuket
 
 import com.prompthavenai.falcibuket.data.remote.FortuneErrorMapper
 import com.prompthavenai.falcibuket.data.remote.FortuneErrorCode
+import com.prompthavenai.falcibuket.data.remote.ImageProcessingException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -48,6 +49,36 @@ class FortuneErrorMapperTest {
         FortuneErrorCode.values().forEach { code ->
             val msg = FortuneErrorMapper.userMessage(code)
             assertTrue("Missing message for $code", msg.isNotBlank())
+        }
+    }
+
+    @Test
+    fun `image processing exceptions keep their specific code`() {
+        val err = FortuneErrorMapper.fromThrowable(
+            ImageProcessingException(FortuneErrorCode.IMAGE_DECODE_FAILED, "DECODE", "CUP")
+        )
+        assertEquals(FortuneErrorCode.IMAGE_DECODE_FAILED, err.code)
+        assertTrue(err.userMessage.contains("görsel"))
+    }
+
+    @Test
+    fun `security exception maps to permission denied`() {
+        val err = FortuneErrorMapper.fromThrowable(SecurityException("denied"))
+        assertEquals(FortuneErrorCode.IMAGE_PERMISSION_DENIED, err.code)
+    }
+
+    @Test
+    fun `image errors never collapse to UNKNOWN`() {
+        listOf(
+            FortuneErrorCode.IMAGE_UNREADABLE,
+            FortuneErrorCode.IMAGE_DECODE_FAILED,
+            FortuneErrorCode.IMAGE_INVALID,
+            FortuneErrorCode.IMAGE_TOO_LARGE,
+            FortuneErrorCode.IMAGE_PERMISSION_DENIED,
+            FortuneErrorCode.IMAGE_PROCESSING_FAILED
+        ).forEach { code ->
+            val err = FortuneErrorMapper.fromThrowable(ImageProcessingException(code, "STAGE"))
+            assertEquals(code, err.code)
         }
     }
 }

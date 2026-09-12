@@ -1,8 +1,18 @@
 package com.prompthavenai.falcibuket.data.remote
 
 enum class FortuneErrorCode {
-    NO_NETWORK, AUTH_ERROR, IMAGE_TOO_LARGE, IMAGE_INVALID,
-    AI_TIMEOUT, AI_RATE_LIMIT, AI_SERVER_ERROR, UNKNOWN
+    NO_NETWORK,
+    AUTH_ERROR,
+    IMAGE_UNREADABLE,
+    IMAGE_DECODE_FAILED,
+    IMAGE_INVALID,
+    IMAGE_TOO_LARGE,
+    IMAGE_PERMISSION_DENIED,
+    IMAGE_PROCESSING_FAILED,
+    AI_TIMEOUT,
+    AI_RATE_LIMIT,
+    AI_SERVER_ERROR,
+    UNKNOWN
 }
 
 data class FortuneError(
@@ -27,10 +37,18 @@ object FortuneErrorMapper {
             "İnternet bağlantısı bulunamadı. Bağlantını kontrol edip tekrar dener misin?"
         FortuneErrorCode.AUTH_ERROR ->
             "Buket şu anda seni tanıyamadı. Uygulamayı yeniden başlatıp tekrar deneyebilirsin."
-        FortuneErrorCode.IMAGE_TOO_LARGE ->
-            "Fotoğraf çok büyük görünüyor. Kameradan veya galeriden daha küçük bir fotoğraf seçip tekrar dene."
+        FortuneErrorCode.IMAGE_UNREADABLE ->
+            "Fotoğrafa erişemedim. Görseli yeniden seçmeyi deneyebilirsin."
+        FortuneErrorCode.IMAGE_DECODE_FAILED ->
+            "Bu görseli açamadım. JPG veya PNG bir fotoğraf seçmeyi dene."
         FortuneErrorCode.IMAGE_INVALID ->
-            "Fotoğraf açılamadı. Lütfen fincanın net göründüğü bir fotoğraf seç."
+            "Bu görseli işleyemedim. JPG veya PNG bir fotoğraf seçmeyi dene."
+        FortuneErrorCode.IMAGE_TOO_LARGE ->
+            "Fotoğraf çok büyük. Daha düşük çözünürlüklü bir görsel deneyebilirsin."
+        FortuneErrorCode.IMAGE_PERMISSION_DENIED ->
+            "Fotoğrafa erişim izni verilmedi. Görseli yeniden seçmeyi dene."
+        FortuneErrorCode.IMAGE_PROCESSING_FAILED ->
+            "Fotoğrafı hazırlarken bir sorun oldu. Tekrar deneyebilirsin."
         FortuneErrorCode.AI_TIMEOUT ->
             "Buket biraz fazla düşündü ve yanıt gecikti. Tekrar denersen yaklaşımın daha keskin olacak."
         FortuneErrorCode.AI_RATE_LIMIT ->
@@ -42,7 +60,19 @@ object FortuneErrorMapper {
     }
 
     fun fromThrowable(t: Throwable, networkAvailable: Boolean = true): FortuneError {
-        if (!networkAvailable) return FortuneError(FortuneErrorCode.NO_NETWORK, userMessage(FortuneErrorCode.NO_NETWORK))
+        if (!networkAvailable) {
+            return FortuneError(FortuneErrorCode.NO_NETWORK, userMessage(FortuneErrorCode.NO_NETWORK))
+        }
+        // Yerel görsel işleme hataları açıkça sınıflandırılır (UNKNOWN'a düşmez).
+        if (t is ImageProcessingException) {
+            return FortuneError(t.code, userMessage(t.code))
+        }
+        if (t is SecurityException) {
+            return FortuneError(
+                FortuneErrorCode.IMAGE_PERMISSION_DENIED,
+                userMessage(FortuneErrorCode.IMAGE_PERMISSION_DENIED)
+            )
+        }
         val code: String? = (t as? com.google.firebase.functions.FirebaseFunctionsException)?.code?.name
         val detail: String? = (t as? com.google.firebase.functions.FirebaseFunctionsException)?.details?.let {
             (it as? Map<*, *>)?.get("code") as? String

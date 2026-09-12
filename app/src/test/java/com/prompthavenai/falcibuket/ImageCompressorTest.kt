@@ -39,4 +39,33 @@ class ImageCompressorTest {
         val sample = ImageCompressor.computeSampleSize(2000, 1000, 400)
         assertTrue(2000 / sample <= 400 * 2)
     }
+
+    @Test
+    fun `scaled size keeps landscape aspect within max edge`() {
+        assertEquals(1600 to 800, ImageCompressor.computeScaledSize(3200, 1600))
+    }
+
+    @Test
+    fun `scaled size keeps portrait aspect within max edge`() {
+        assertEquals(800 to 1600, ImageCompressor.computeScaledSize(1600, 3200))
+    }
+
+    @Test
+    fun `scaled size never upscales`() {
+        assertEquals(800 to 600, ImageCompressor.computeScaledSize(800, 600))
+    }
+
+    @Test
+    fun `scaled size handles degenerate input`() {
+        assertEquals(1 to 1, ImageCompressor.computeScaledSize(0, 0))
+        assertEquals(1 to 1, ImageCompressor.computeScaledSize(100, 100, 0))
+    }
+
+    @Test
+    fun `jpeg signature detection`() {
+        assertTrue(ImageCompressor.isJpeg(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())))
+        assertEquals(false, ImageCompressor.isJpeg(byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte())))
+        assertEquals(false, ImageCompressor.isJpeg(byteArrayOf(0xFF.toByte())))
+        assertEquals(false, ImageCompressor.isJpeg(ByteArray(0)))
+    }
 }
