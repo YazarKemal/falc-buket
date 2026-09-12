@@ -51,11 +51,28 @@ val uriSaver = androidx.compose.runtime.saveable.Saver<Uri?, String>(
     restore = { if (it == "") null else Uri.parse(it) }
 )
 
-/** Creates a FileProvider URI for a new camera capture. */
-fun newCameraUri(context: Context, prefix: String): Uri {
+/** A camera capture URI plus the backing cache file so it can be cleaned up. */
+data class CameraCapture(val uri: Uri, val file: File)
+
+/** Creates a FileProvider URI for a new camera capture and returns its file. */
+fun newCameraCapture(context: Context, prefix: String): CameraCapture {
     val dir = File(context.cacheDir, "camera").apply { mkdirs() }
     val file = File(dir, "${prefix}_${System.currentTimeMillis()}.jpg")
-    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    return CameraCapture(uri, file)
+}
+
+/** Creates a FileProvider URI for a new camera capture. */
+fun newCameraUri(context: Context, prefix: String): Uri = newCameraCapture(context, prefix).uri
+
+/** Walks the context wrapper chain to find the hosting Activity. */
+fun Context.findActivity(): android.app.Activity? {
+    var ctx: Context? = this
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is android.app.Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
 }
 
 /** Reusable photo picker/capture slot used by coffee and generic photo flows. */

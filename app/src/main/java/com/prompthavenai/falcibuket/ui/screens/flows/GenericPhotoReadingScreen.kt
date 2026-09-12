@@ -29,15 +29,14 @@ import com.prompthavenai.falcibuket.ui.components.GoldButton
 import com.prompthavenai.falcibuket.ui.components.PhotoUploadSlot
 import com.prompthavenai.falcibuket.ui.components.ReadingFlowScaffold
 import com.prompthavenai.falcibuket.ui.components.ReadingPreviewNotice
-import com.prompthavenai.falcibuket.ui.components.newCameraUri
+import com.prompthavenai.falcibuket.ui.components.findActivity
+import com.prompthavenai.falcibuket.ui.components.newCameraCapture
 import com.prompthavenai.falcibuket.ui.components.uriSaver
 import com.prompthavenai.falcibuket.ui.theme.TextMuted
 import java.io.File
 
-private fun deleteCameraFile(uri: Uri?) {
-    if (uri?.scheme == "file") {
-        runCatching { uri.path?.let { File(it).delete() } }
-    }
+private fun deleteTempFile(path: String?) {
+    if (path != null) runCatching { File(path).delete() }
 }
 
 /** Reusable single-photo flow for PHOTO_VISION types other than coffee. */
@@ -51,25 +50,37 @@ fun GenericPhotoReadingScreen(
     onSubmit: () -> Unit
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
     var photo by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
-    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var cameraUri by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
+    var cameraPath by rememberSaveable { mutableStateOf<String?>(null) }
 
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         if (ok && cameraUri != null) {
-            deleteCameraFile(photo)
             photo = cameraUri
         } else {
-            deleteCameraFile(cameraUri)
+            // Capture cancelled: drop the pending temp file and keep the previous photo.
+            deleteTempFile(cameraPath)
+            cameraPath = null
+            cameraUri = null
         }
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { picked ->
-        if (picked != null) photo = picked
+        if (picked != null) {
+            // Gallery pick replaces any pending camera capture.
+            deleteTempFile(cameraPath)
+            cameraPath = null
+            cameraUri = null
+            photo = picked
+        }
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            deleteCameraFile(photo)
-            deleteCameraFile(cameraUri)
+            // Delete the pending capture when actually leaving (not on rotation).
+            if (activity?.isChangingConfigurations != true) {
+                deleteTempFile(cameraPath)
+            }
         }
     }
 
@@ -85,7 +96,12 @@ fun GenericPhotoReadingScreen(
             uri = photo,
             modifier = Modifier.fillMaxWidth(),
             onCamera = {
-                cameraUri = newCameraUri(context, "photo").also { takePicture.launch(it) }
+                // Replace: drop the previous capture's temp file before creating a new one.
+                deleteTempFile(cameraPath)
+                val capture = newCameraCapture(context, "photo")
+                cameraUri = capture.uri
+                cameraPath = capture.file.absolutePath
+                takePicture.launch(capture.uri)
             },
             onGallery = {
                 pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -102,7 +118,11 @@ fun GenericPhotoReadingScreen(
             cta,
             enabled = photo != null,
             modifier = Modifier.fillMaxWidth(),
-            onClick = onSubmit
+            onClick = {
+                deleteTempFile(cameraPath)
+                cameraPath = null
+                onSubmit()
+            }
         )
         Spacer(Modifier.height(12.dp))
         ReadingPreviewNotice()
