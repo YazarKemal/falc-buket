@@ -1,6 +1,6 @@
 import { defineSecret } from "firebase-functions/params";
 import OpenAI from "openai";
-import { AI_BASE_URL } from "../config/aiModels";
+import { AI_BASE_URL, AI_MAX_RETRIES } from "../config/aiModels";
 import { MissingAiSecretError } from "./aiErrors";
 
 /**
@@ -20,5 +20,6 @@ export function createZaiClient(): OpenAI {
   if (!apiKey) {
     throw new MissingAiSecretError();
   }
-  return new OpenAI({ apiKey, baseURL: AI_BASE_URL });
+  // maxRetries 0: bir kullanıcı gönderimi en fazla bir sağlayıcı isteği üretir.
+  return new OpenAI({ apiKey, baseURL: AI_BASE_URL, maxRetries: AI_MAX_RETRIES });
 }

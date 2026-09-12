@@ -9,4 +9,10 @@ package com.prompthavenai.falcibuket.data.remote
  */
 object BackendConfig {
     const val FUNCTIONS_REGION = "europe-west1"
+
+    /**
+     * Coffee vision callable zaman aşımı. Hiyerarşi:
+     * provider (150 sn) < function (180 sn) < bu istemci değeri (210 sn).
+     */
+    const val COFFEE_CALLABLE_TIMEOUT_SECONDS = 210L
 }

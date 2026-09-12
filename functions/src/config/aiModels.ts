@@ -17,12 +17,19 @@ export const MEMORY_MAX_TOKENS = 500;
 export const VISION_MAX_TOKENS = 2200;
 
 /**
- * İstek zaman aşımı bütçeleri. Fonksiyon deadline'ı 120 sn; chat iki sıralı
- * çağrı yapar (45 + 20 sn) ve vision tek çağrıdır (90 sn).
+ * İstek zaman aşımı bütçeleri. Chat iki sıralı çağrı yapar (45 + 20 sn) ve
+ * vision tek çağrıdır. Vision için güvenli hiyerarşi:
+ *   provider (150 sn) < function (180 sn) < Android callable (210 sn)
  */
 export const TEXT_REQUEST_TIMEOUT_MS = 45_000;
 export const MEMORY_REQUEST_TIMEOUT_MS = 20_000;
-export const VISION_REQUEST_TIMEOUT_MS = 90_000;
+export const VISION_REQUEST_TIMEOUT_MS = 150_000;
+
+/** Vision fonksiyonunun Cloud Functions deadline'ı (sn). */
+export const VISION_FUNCTION_TIMEOUT_SECONDS = 180;
+
+/** Android Coffee callable zaman aşımı (sn). Provider'dan ~30 sn sonra. */
+export const VISION_CLIENT_TIMEOUT_SECONDS = 210;
 
 /** Ağ hatalarında sessiz yeniden deneme yok; hata güvenli biçimde eşlenir. */
 export const AI_MAX_RETRIES = 0;

@@ -2,7 +2,12 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { ZAI_API_KEY } from "./zaiClient";
 import { getAiProvider } from "./zaiProvider";
 import { mapProviderError, safeErrorInfo } from "./aiErrors";
-import { VISION_MODEL, VISION_DAILY_LIMIT, VISION_MAX_TOKENS } from "../config/aiModels";
+import {
+  VISION_MODEL,
+  VISION_DAILY_LIMIT,
+  VISION_MAX_TOKENS,
+  VISION_FUNCTION_TIMEOUT_SECONDS
+} from "../config/aiModels";
 import { buketInstructions } from "../prompts";
 import {
   coffeeJsonSchema,
@@ -53,8 +58,9 @@ const COFFEE_JSON_OVERRIDE = [
 
 // TODO(production): Firebase App Check zorunlu kılınacak (enforceAppCheck: true).
 export const analyzeCoffeeReading = onCall(
-  { secrets: [ZAI_API_KEY], region: "europe-west1", timeoutSeconds: 120, memory: "512MiB" },
+  { secrets: [ZAI_API_KEY], region: "europe-west1", timeoutSeconds: VISION_FUNCTION_TIMEOUT_SECONDS, memory: "512MiB" },
   async (request) => {
+    const functionStartedAt = Date.now();
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Oturum gerekli.");
     }
@@ -122,7 +128,12 @@ export const analyzeCoffeeReading = onCall(
     }
 
     // Kalıcılık: reading + prediction ledger + memory + usage.
+    const saveStartedAt = Date.now();
     const readingId = await saveCoffeeReading(uid, result, VISION_MODEL, userQuestion);
+    console.info("firestore_save_completed", {
+      operation: "analyzeCoffeeReading",
+      firestore_save_duration_ms: Date.now() - saveStartedAt
+    });
     try {
       await savePredictions(uid, readingId, result.timeWindows);
       if (result.memoryCandidates.length > 0) {
@@ -134,6 +145,11 @@ export const analyzeCoffeeReading = onCall(
       console.warn("post-reading persistence partially failed (non-fatal)", safeErrorInfo(err));
     }
     await incrementUsage(uid, "visionCount");
+
+    console.info("function_completed", {
+      operation: "analyzeCoffeeReading",
+      function_total_duration_ms: Date.now() - functionStartedAt
+    });
 
     // Görsel payload'ları response'a ASLA ekleme.
     return { readingId, result };

@@ -21,4 +21,10 @@ class BackendConfigTest {
         assertTrue(BackendConfig.FUNCTIONS_REGION.isNotBlank())
         assertEquals(BackendConfig.FUNCTIONS_REGION.trim(), BackendConfig.FUNCTIONS_REGION)
     }
+
+    @Test
+    fun `coffee callable timeout is explicit and above the function deadline`() {
+        assertEquals(210L, BackendConfig.COFFEE_CALLABLE_TIMEOUT_SECONDS)
+        assertTrue(BackendConfig.COFFEE_CALLABLE_TIMEOUT_SECONDS > 180L)
+    }
 }

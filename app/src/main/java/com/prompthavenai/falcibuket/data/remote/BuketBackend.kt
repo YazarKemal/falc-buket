@@ -6,6 +6,7 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.functions.FirebaseFunctionsException
 import com.google.firebase.functions.HttpsCallableReference
+import java.util.concurrent.TimeUnit
 import com.prompthavenai.falcibuket.data.model.CoffeeResult
 import com.prompthavenai.falcibuket.data.model.ReadingEntry
 import com.prompthavenai.falcibuket.data.model.TimeWindow
@@ -63,7 +64,9 @@ class FirebaseBuketBackend : BuketBackend {
             saucerBase64?.let { put("saucerImageBase64", it) }
             question?.takeIf { it.isNotBlank() }?.let { put("userQuestion", it) }
         }
-        val result = callable("analyzeCoffeeReading").call(payload).await()
+        val result = callable("analyzeCoffeeReading", BackendConfig.COFFEE_CALLABLE_TIMEOUT_SECONDS)
+            .call(payload)
+            .await()
         return parseCoffeeResult(asMap(result.getData())["result"])
     }
 
@@ -153,9 +156,13 @@ class FirebaseBuketBackend : BuketBackend {
      * hiçbir ekran kendi sign-in mantığını kopyalamaz ve hiçbir backend çağrısı
      * kimliksiz çalışmaz.
      */
-    private suspend fun callable(name: String): HttpsCallableReference {
+    private suspend fun callable(name: String, timeoutSeconds: Long? = null): HttpsCallableReference {
         FirebaseGate.ensureUid()
-        return FirebaseFunctions.getInstance(BackendConfig.FUNCTIONS_REGION).getHttpsCallable(name)
+        val reference = FirebaseFunctions.getInstance(BackendConfig.FUNCTIONS_REGION).getHttpsCallable(name)
+        if (timeoutSeconds != null) {
+            reference.setTimeout(timeoutSeconds, TimeUnit.SECONDS)
+        }
+        return reference
     }
 
     private fun asMap(data: Any?): Map<*, *> = (data as? Map<*, *>) ?: emptyMap<Any, Any>()

@@ -2,18 +2,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import type OpenAI from "openai";
+import OpenAI from "openai";
 import {
   AI_BASE_URL,
   AI_MAX_RETRIES,
   TEXT_MODEL,
   TEXT_REQUEST_TIMEOUT_MS,
+  VISION_CLIENT_TIMEOUT_SECONDS,
+  VISION_FUNCTION_TIMEOUT_SECONDS,
   VISION_MODEL,
   VISION_REQUEST_TIMEOUT_MS
 } from "../config/aiModels";
 import { ZAI_API_KEY, createZaiClient } from "../ai/zaiClient";
 import { ZaiProvider, buildVisionContent, extractCompletionText } from "../ai/zaiProvider";
-import { mapProviderError, safeErrorInfo, MissingAiSecretError } from "../ai/aiErrors";
+import { mapProviderError, safeErrorInfo, classifyProviderError, MissingAiSecretError } from "../ai/aiErrors";
 import {
   parseJsonObjectFromText,
   assertCoffeeEnvelope,
@@ -30,6 +32,18 @@ test("Z.AI base URL and models are centralized and correct", () => {
 
 test("ZAI_API_KEY secret is declared with the correct name", () => {
   assert.equal(ZAI_API_KEY.name, "ZAI_API_KEY");
+});
+
+test("provider retries are disabled (one submission -> at most one provider attempt)", () => {
+  assert.equal(AI_MAX_RETRIES, 0);
+});
+
+test("vision timeout hierarchy is provider < function < client", () => {
+  assert.ok(VISION_REQUEST_TIMEOUT_MS < VISION_FUNCTION_TIMEOUT_SECONDS * 1000, "provider < function");
+  assert.ok(
+    VISION_FUNCTION_TIMEOUT_SECONDS * 1000 < VISION_CLIENT_TIMEOUT_SECONDS * 1000,
+    "function < client"
+  );
 });
 
 // ---- vision content --------------------------------------------------------
@@ -100,7 +114,7 @@ test("generateText sends text model, system+history order and no vision fields",
   assert.equal(capture.body?.max_tokens, 900);
   assert.equal(capture.body?.response_format, undefined);
   assert.equal(capture.options?.timeout, TEXT_REQUEST_TIMEOUT_MS);
-  assert.equal(capture.options?.maxRetries, AI_MAX_RETRIES);
+  assert.equal(capture.options?.maxRetries, 0);
   const messages = capture.body?.messages as Array<Record<string, unknown>>;
   assert.deepEqual(messages.map((m) => m.role), ["system", "user", "assistant", "user"]);
   assert.deepEqual(messages.map((m) => m.content), ["SISTEM", "ilk", "yanıt", "şimdi"]);
@@ -207,16 +221,59 @@ function silenced<T>(fn: () => T): T {
   }
 }
 
-test("mapProviderError maps provider failures to safe application codes", () => {
+test("mapProviderError fails safe for non-SDK errors", () => {
   silenced(() => {
-    assert.equal(mapProviderError(Object.assign(new Error("unauthorized"), { status: 401 }), "op").code, "internal");
-    assert.equal(mapProviderError(Object.assign(new Error("forbidden"), { status: 403 }), "op").code, "internal");
-    assert.equal(mapProviderError(Object.assign(new Error("busy"), { status: 429 }), "op").code, "resource-exhausted");
-    assert.equal(mapProviderError(Object.assign(new Error("boom"), { status: 503 }), "op").code, "unavailable");
-    assert.equal(mapProviderError(Object.assign(new Error("net"), { name: "APIConnectionError" }), "op").code, "unavailable");
-    assert.equal(mapProviderError(Object.assign(new Error("slow"), { name: "APIConnectionTimeoutError" }), "op").code, "deadline-exceeded");
-    assert.equal(mapProviderError(new Error("ZAI_API_KEY secret tanımlı değil."), "op").code, "internal");
+    // Spoofed name/status on a plain Error must NOT be trusted; fail safe to internal.
+    assert.equal(mapProviderError(Object.assign(new Error("busy"), { status: 429 }), "op").code, "internal");
+    assert.equal(mapProviderError(Object.assign(new Error("boom"), { status: 503 }), "op").code, "internal");
+    assert.equal(
+      mapProviderError(Object.assign(new Error("slow"), { name: "APIConnectionTimeoutError" }), "op").code,
+      "internal"
+    );
     assert.equal(mapProviderError(new Error("tamamen bilinmeyen"), "op").code, "internal");
+  });
+});
+
+test("classifyProviderError uses SDK identity, not name/code", () => {
+  const timeoutErr = new OpenAI.APIConnectionTimeoutError();
+  const connErr = new OpenAI.APIConnectionError({});
+  const rateErr = new OpenAI.RateLimitError(429, undefined, "rate", undefined as never);
+  const serverErr = new OpenAI.InternalServerError(503, undefined, "server", undefined as never);
+  const authErr = new OpenAI.AuthenticationError(401, undefined, "auth", undefined as never);
+
+  // The SDK classes do not set `name`; identity checks must still work.
+  assert.equal(timeoutErr.name, "Error");
+  assert.equal(classifyProviderError(timeoutErr).category, "PROVIDER_TIMEOUT");
+  assert.equal(classifyProviderError(connErr).category, "PROVIDER_CONNECTION");
+  assert.equal(classifyProviderError(rateErr).category, "PROVIDER_RATE_LIMIT");
+  assert.equal(classifyProviderError(serverErr).category, "PROVIDER_SERVER");
+  assert.equal(classifyProviderError(authErr).category, "PROVIDER_AUTH");
+  assert.equal(classifyProviderError(new Error("plain")).category, "PROVIDER_UNKNOWN");
+});
+
+test("mapProviderError maps SDK errors to safe HttpsError codes", () => {
+  silenced(() => {
+    assert.equal(
+      mapProviderError(new OpenAI.APIConnectionTimeoutError(), "op").code,
+      "deadline-exceeded"
+    );
+    assert.equal(
+      mapProviderError(new OpenAI.APIConnectionError({}), "op").code,
+      "unavailable"
+    );
+    assert.equal(
+      mapProviderError(new OpenAI.RateLimitError(429, undefined, "rate", undefined as never), "op").code,
+      "resource-exhausted"
+    );
+    assert.equal(
+      mapProviderError(new OpenAI.InternalServerError(503, undefined, "server", undefined as never), "op").code,
+      "unavailable"
+    );
+    assert.equal(
+      mapProviderError(new OpenAI.AuthenticationError(401, undefined, "auth", undefined as never), "op").code,
+      "internal"
+    );
+    assert.equal(mapProviderError(new Error("plain"), "op").code, "internal");
   });
 });
 
@@ -242,8 +299,11 @@ test("missing ZAI_API_KEY fails safely and maps to internal", () => {
 
 test("safeErrorInfo exposes only allowlisted fields", () => {
   const info = safeErrorInfo(Object.assign(new Error("secret"), { status: 429, name: "APIError", code: "X" }));
-  assert.deepEqual(info, { name: "APIError", status: 429, code: "X" });
+  assert.deepEqual(info, { category: "PROVIDER_UNKNOWN" });
   assert.ok(!JSON.stringify(info).includes("secret"));
+
+  const sdkInfo = safeErrorInfo(new OpenAI.RateLimitError(429, undefined, "rate", undefined as never));
+  assert.deepEqual(sdkInfo, { category: "PROVIDER_RATE_LIMIT", httpStatus: 429 });
 });
 
 // ---- source audit ----------------------------------------------------------

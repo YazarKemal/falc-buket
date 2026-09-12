@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { createZaiClient } from "./zaiClient";
+import { classifyProviderError } from "./aiErrors";
 import {
   AI_MAX_RETRIES,
   TEXT_MODEL,
@@ -37,6 +38,36 @@ export function extractCompletionText(response: ChatCompletion): string {
   return content.trim();
 }
 
+/** İçerik/prompt loglamadan yalnızca güvenli tamamlama telemetrisi. */
+function logCompletion(
+  phase: "provider_request_completed",
+  model: string,
+  startedAt: number,
+  response: ChatCompletion
+): void {
+  const choice = response.choices?.[0];
+  const content = choice?.message?.content;
+  console.info(phase, {
+    model,
+    provider_duration_ms: Date.now() - startedAt,
+    provider_timeout: false,
+    choices_count: response.choices?.length ?? 0,
+    finish_reason: choice?.finish_reason ?? null,
+    content_length: typeof content === "string" ? content.length : 0
+  });
+}
+
+function logProviderFailure(model: string, startedAt: number, err: unknown): void {
+  const { category, httpStatus } = classifyProviderError(err);
+  console.error("provider_request_completed", {
+    model,
+    provider_duration_ms: Date.now() - startedAt,
+    provider_timeout: category === "PROVIDER_TIMEOUT",
+    provider_error_category: category,
+    http_status: httpStatus
+  });
+}
+
 export class ZaiProvider implements AiProvider {
   private client?: OpenAI;
 
@@ -54,16 +85,25 @@ export class ZaiProvider implements AiProvider {
       { role: "system", content: input.system },
       ...input.turns.map((turn) => ({ role: turn.role, content: turn.content } as ChatMessage))
     ];
-    const response = await this.getClient().chat.completions.create(
-      {
-        model: TEXT_MODEL,
-        messages,
-        max_tokens: input.maxTokens,
-        ...(input.json ? { response_format: { type: "json_object" as const } } : {})
-      },
-      { timeout: input.timeoutMs ?? TEXT_REQUEST_TIMEOUT_MS, maxRetries: AI_MAX_RETRIES }
-    );
-    return extractCompletionText(response);
+    const startedAt = Date.now();
+    console.info("provider_request_started", { model: TEXT_MODEL, json: Boolean(input.json) });
+    try {
+      const response = await this.getClient().chat.completions.create(
+        {
+          model: TEXT_MODEL,
+          messages,
+          max_tokens: input.maxTokens,
+          ...(input.json ? { response_format: { type: "json_object" as const } } : {})
+        },
+        { timeout: input.timeoutMs ?? TEXT_REQUEST_TIMEOUT_MS, maxRetries: AI_MAX_RETRIES }
+      );
+      const text = extractCompletionText(response);
+      logCompletion("provider_request_completed", TEXT_MODEL, startedAt, response);
+      return text;
+    } catch (err) {
+      logProviderFailure(TEXT_MODEL, startedAt, err);
+      throw err;
+    }
   }
 
   async analyzeImages(input: AnalyzeImagesInput): Promise<string> {
@@ -71,16 +111,25 @@ export class ZaiProvider implements AiProvider {
       { role: "system", content: input.system },
       { role: "user", content: buildVisionContent(input.images, input.prompt) }
     ];
-    // Vision modelleri response_format desteklemez; JSON yalnızca prompt ile istenir.
-    const response = await this.getClient().chat.completions.create(
-      {
-        model: VISION_MODEL,
-        messages,
-        max_tokens: input.maxTokens
-      },
-      { timeout: input.timeoutMs ?? VISION_REQUEST_TIMEOUT_MS, maxRetries: AI_MAX_RETRIES }
-    );
-    return extractCompletionText(response);
+    const startedAt = Date.now();
+    console.info("provider_request_started", { model: VISION_MODEL, images: input.images.length });
+    try {
+      // Vision modelleri response_format desteklemez; JSON yalnızca prompt ile istenir.
+      const response = await this.getClient().chat.completions.create(
+        {
+          model: VISION_MODEL,
+          messages,
+          max_tokens: input.maxTokens
+        },
+        { timeout: input.timeoutMs ?? VISION_REQUEST_TIMEOUT_MS, maxRetries: AI_MAX_RETRIES }
+      );
+      const text = extractCompletionText(response);
+      logCompletion("provider_request_completed", VISION_MODEL, startedAt, response);
+      return text;
+    } catch (err) {
+      logProviderFailure(VISION_MODEL, startedAt, err);
+      throw err;
+    }
   }
 }
 
