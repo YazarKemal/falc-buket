@@ -26,8 +26,10 @@ import com.prompthavenai.falcibuket.data.model.FortuneType
 import com.prompthavenai.falcibuket.data.model.Reading
 import com.prompthavenai.falcibuket.data.repository.FortuneRepositoryHolder
 import com.prompthavenai.falcibuket.ui.components.CoffeeLoadingVisual
+import com.prompthavenai.falcibuket.ui.components.CoffeeVideoAssets
 import com.prompthavenai.falcibuket.ui.components.GoldButton
 import com.prompthavenai.falcibuket.ui.components.MysticBackground
+import com.prompthavenai.falcibuket.ui.components.MysticLoopVideo
 import com.prompthavenai.falcibuket.ui.components.ReadingArtworkHeader
 import com.prompthavenai.falcibuket.ui.components.ReadingPreviewNotice
 import com.prompthavenai.falcibuket.ui.model.FortuneCatalog
@@ -96,23 +98,42 @@ private fun CoffeeResultContent(nav: NavController) {
                         stage = (stage + 1).coerceAtMost(loadingStages.lastIndex)
                     }
                 }
-                Column(
-                    Modifier.align(Alignment.Center).padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    CoffeeLoadingVisual()
-                    Spacer(Modifier.height(20.dp))
-                    Text(
-                        loadingStages[stage],
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Gold,
-                        textAlign = TextAlign.Center
+                Box(Modifier.fillMaxSize()) {
+                    // Gerçek istek sürerken sessiz, döngülü analiz videosu.
+                    MysticLoopVideo(
+                        videoRes = CoffeeVideoAssets.ANALYSIS_LOOP,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
-                    Text(
-                        "Bu birkaç saniye sürebilir ✨",
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    NightBg.copy(alpha = 0.70f),
+                                    NightBg.copy(alpha = 0.86f),
+                                    NightBg.copy(alpha = 0.92f)
+                                )
+                            )
+                        )
                     )
+                    Column(
+                        Modifier.align(Alignment.Center).padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CoffeeLoadingVisual()
+                        Spacer(Modifier.height(20.dp))
+                        Text(
+                            loadingStages[stage],
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Gold,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            "Bu birkaç saniye sürebilir ✨",
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
             is CoffeeUiState.Error -> {
@@ -159,6 +180,19 @@ private fun CoffeeResultBody(nav: NavController, r: CoffeeResult) {
             Modifier.widthIn(max = ResultMaxWidth.dp).fillMaxWidth()
                 .alpha(if (revealed) 1f else 0f).padding(20.dp)
         ) {
+            // Optional future hook: Coffee sonuç videosu sağlandığında burada
+            // oynatılacak (ambient loop / tek seferlik reveal kararı sonra).
+            // Bugün RESULT_VIDEO null; hiçbir eksik kaynağa referans verilmez.
+            // DİKKAT: etkinleştirildiğinde bu Column `.alpha(...)` altında olduğundan
+            // SurfaceView tabanlı PlayerView alfa ile bozulabilir; video alfa'sız bir
+            // katmana taşınmalı (veya alpha kaldırılmalı).
+            CoffeeVideoAssets.RESULT_VIDEO?.let { videoRes ->
+                MysticLoopVideo(
+                    videoRes = videoRes,
+                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(24.dp))
+                )
+                Spacer(Modifier.height(18.dp))
+            }
             ReadingArtworkHeader(
                 FortuneType.COFFEE.resultArtwork.resultRes,
                 FortuneType.COFFEE.resultArtwork.resultAspectRatio

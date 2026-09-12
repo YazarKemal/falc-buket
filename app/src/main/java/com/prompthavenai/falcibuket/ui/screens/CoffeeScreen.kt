@@ -4,11 +4,9 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -20,16 +18,16 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.prompthavenai.falcibuket.R
 import com.prompthavenai.falcibuket.navigation.Routes
+import com.prompthavenai.falcibuket.ui.components.CoffeeVideoAssets
 import com.prompthavenai.falcibuket.ui.components.GoldButton
+import com.prompthavenai.falcibuket.ui.components.MysticLoopVideo
 import com.prompthavenai.falcibuket.ui.components.PhotoUploadSlot
 import com.prompthavenai.falcibuket.ui.components.newCameraCapture
 import com.prompthavenai.falcibuket.ui.components.uriSaver
@@ -86,6 +84,25 @@ fun CoffeeScreen(nav: NavController) {
     }
 
     Box(Modifier.fillMaxSize().background(NightBg), contentAlignment = Alignment.TopCenter) {
+        // Giriş hero'su: sessiz, döngülü arka plan videosu.
+        MysticLoopVideo(
+            videoRes = CoffeeVideoAssets.ENTRY_LOOP,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+        // Form kontrollerinin okunabilirliği için koyu/erik scrim.
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(
+                        NightBg.copy(alpha = 0.74f),
+                        NightBg.copy(alpha = 0.88f),
+                        NightBg.copy(alpha = 0.94f)
+                    )
+                )
+            )
+        )
+
         BoxWithConstraints(Modifier.widthIn(max = 840.dp).fillMaxSize()) {
             val twoColumns = maxWidth >= 640.dp
             Column(
@@ -98,12 +115,6 @@ fun CoffeeScreen(nav: NavController) {
                 Spacer(Modifier.height(8.dp))
                 Text("Fincanın içini ve tabağını net şekilde fotoğraflaman yeterli.", style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(24.dp))
-                Image(
-                    painterResource(R.drawable.coffee_upload), null,
-                    modifier = Modifier.fillMaxWidth().height(170.dp).clip(RoundedCornerShape(24.dp)),
-                    contentScale = ContentScale.Crop
-                )
-                Spacer(Modifier.height(24.dp))
 
                 val cupSlot: @Composable (Modifier) -> Unit = { m ->
                     PhotoUploadSlot(
@@ -114,7 +125,6 @@ fun CoffeeScreen(nav: NavController) {
                             deleteTempFile(pendingCapture)
                             pendingCameraSlot = 1
                             val capture = newCameraCapture(context, "coffee")
-                            // ViewModel sahiplenir: ekran kapansa/rotasyon olsa da temizlenir.
                             vm.trackTempFile(capture.file)
                             pendingCapture = capture.file
                             cameraUri = capture.uri
