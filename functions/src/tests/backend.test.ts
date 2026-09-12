@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mergeMemories, buildMemoryBlock, MemoryRecord } from "../memory";
-import { validateCoffeeResult, parseMemoryCandidates, validateImageData } from "../schemas";
+import { validateCoffeeResult, parseMemoryCandidates, validateImageData, toValidatedImageDataUrl } from "../schemas";
 
 test("mergeMemories creates new memories", () => {
   const { toCreate, toUpdate } = mergeMemories(
@@ -117,14 +117,35 @@ const jpegBase64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8, 
 const pngBase64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).toString("base64");
 const textBase64 = Buffer.from("merhaba dünya bu bir görsel değil").toString("base64");
 
-test("validateImageData accepts jpeg and png", () => {
+test("validateImageData derives MIME from magic bytes", () => {
   assert.equal(validateImageData(jpegBase64, 100000).mime, "image/jpeg");
-  assert.equal(validateImageData(pngBase64, 100000).mime, "image/jpeg"); // sniff: PNG kabul, default mime
+  assert.equal(validateImageData(pngBase64, 100000).mime, "image/png");
+  assert.equal(validateImageData(`data:image/jpg;base64,${jpegBase64}`, 100000).mime, "image/jpeg");
   assert.equal(validateImageData(`data:image/png;base64,${pngBase64}`, 100000).mime, "image/png");
 });
 
 test("validateImageData rejects non-image", () => {
   assert.throws(() => validateImageData(textBase64, 100000), /desteklenmeyen format/);
+});
+
+test("validateImageData rejects unsupported or mismatched data URL headers", () => {
+  assert.throws(() => validateImageData(`data:image/webp;base64,${jpegBase64}`, 100000), /desteklenmeyen format/);
+  assert.throws(() => validateImageData(`data:application/pdf;base64,${jpegBase64}`, 100000), /desteklenmeyen format/);
+});
+
+test("toValidatedImageDataUrl keeps cup and saucer MIME independent", () => {
+  const cup = toValidatedImageDataUrl(jpegBase64, 100000);
+  const saucer = toValidatedImageDataUrl(pngBase64, 100000);
+  assert.equal(cup.mime, "image/jpeg");
+  assert.equal(saucer.mime, "image/png");
+  assert.match(cup.dataUrl, /^data:image\/jpeg;base64,/);
+  assert.match(saucer.dataUrl, /^data:image\/png;base64,/);
+  assert.notEqual(cup.mime, saucer.mime);
+});
+
+test("toValidatedImageDataUrl strips an existing data URL prefix", () => {
+  const built = toValidatedImageDataUrl(`data:image/png;base64,${pngBase64}`, 100000);
+  assert.equal(built.dataUrl, `data:image/png;base64,${pngBase64}`);
 });
 
 test("validateImageData rejects oversized payload", () => {

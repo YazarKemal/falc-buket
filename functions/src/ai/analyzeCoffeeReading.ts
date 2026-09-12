@@ -2,7 +2,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { OPENAI_API_KEY, getClient } from "../ai/openaiClient";
 import { VISION_MODEL, VISION_DAILY_LIMIT } from "../config/openaiModels";
 import { buketInstructions } from "../prompts";
-import { coffeeJsonSchema, validateCoffeeResult, validateImageData, CoffeeResult } from "../schemas";
+import { coffeeJsonSchema, validateCoffeeResult, toValidatedImageDataUrl, CoffeeResult } from "../schemas";
 import { buildMemoryBlock } from "../memory";
 import { topMemories, applyMemoryMerge, incrementUsage, getTodayUsage } from "../firestore/memoryRepository";
 import { saveCoffeeReading, savePredictions } from "../firestore/readingRepository";
@@ -58,13 +58,13 @@ export const analyzeCoffeeReading = onCall(
     }
 
     // Görsel doğrulama (secret/stack sızmadan, ayrıntılı kod ile).
-    let cupMime = "image/jpeg";
+    // Cup ve tabak bağımsız doğrulanır; her biri kendi tespit edilen MIME'ını taşır.
+    let cupDataUrl: string;
     let saucerDataUrl: string | undefined;
     try {
-      cupMime = validateImageData(cupBase64, MAX_DECODED_IMAGE_BYTES).mime;
+      cupDataUrl = toValidatedImageDataUrl(cupBase64, MAX_DECODED_IMAGE_BYTES).dataUrl;
       if (saucerBase64) {
-        validateImageData(saucerBase64, MAX_DECODED_IMAGE_BYTES);
-        saucerDataUrl = toDataUrl(saucerBase64);
+        saucerDataUrl = toValidatedImageDataUrl(saucerBase64, MAX_DECODED_IMAGE_BYTES).dataUrl;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
@@ -77,7 +77,6 @@ export const analyzeCoffeeReading = onCall(
     const memories = await topMemories(uid, 8);
     const memoryBlock = buildMemoryBlock(memories);
 
-    const cupDataUrl = toDataUrl(cupBase64, cupMime);
     const content: Array<{ type: string; text?: string; image_url?: string }> = [
       {
         type: "input_text",
@@ -100,6 +99,7 @@ export const analyzeCoffeeReading = onCall(
     try {
       const response = await client.responses.create({
         model: VISION_MODEL,
+        store: false,
         instructions: buketInstructions(memoryBlock),
         input: [{ role: "user", content: content as never }],
         text: { format: { type: "json_schema", name: "coffee_reading", schema: coffeeJsonSchema, strict: true } },
@@ -134,8 +134,3 @@ export const analyzeCoffeeReading = onCall(
     return { readingId, result };
   }
 );
-
-function toDataUrl(base64: string, mime = "image/jpeg"): string {
-  const data = base64.includes(",") ? base64.slice(base64.indexOf(",") + 1) : base64;
-  return `data:${mime};base64,${data}`;
-}

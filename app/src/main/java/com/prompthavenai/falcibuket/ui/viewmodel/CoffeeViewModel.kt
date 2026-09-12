@@ -30,7 +30,7 @@ sealed interface CoffeeUiState {
  * Activity kapsamında paylaşılır: CoffeeScreen analizi başlatır,
  * ReadingResultScreen sonucu gösterir.
  */
-class CoffeeViewModel(
+class CoffeeViewModel @JvmOverloads constructor(
     application: Application,
     private val backend: BuketBackend = ChatViewModel.defaultBackend()
 ) : AndroidViewModel(application) {

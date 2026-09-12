@@ -190,17 +190,40 @@ export function validateCoffeeResult(raw: unknown): CoffeeResult {
   };
 }
 
-/** Görsel payload doğrulama: data URL / base64, magic bytes, boyut. */
+/**
+ * Backend tarafından kabul edilen görsel formatları. Android ön işleme her zaman
+ * JPEG üretir; burada sadece JPEG ve PNG kabul edilir (WEBP desteklenmiyor).
+ */
+const SUPPORTED_IMAGE_MIME = new Set(["image/jpeg", "image/jpg", "image/png"]);
+
+/** MIME'ı bytes'tan türet: JPEG (FFD8) veya PNG (89504E47). */
+function detectImageMime(buffer: Buffer): "image/jpeg" | "image/png" | undefined {
+  const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8;
+  const isPng = buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+  if (isJpeg) return "image/jpeg";
+  if (isPng) return "image/png";
+  return undefined;
+}
+
+/**
+ * Görsel payload doğrulama: data URL / raw base64, magic bytes, boyut.
+ * Dönen MIME, gövde bytes'ından türetilir; `data:` başlığı yalnızca bir
+ * etikettir ve kaynak doğruluk kabul edilmez.
+ */
 export function validateImageData(
   base64: string,
   maxDecodedBytes: number
 ): { buffer: Buffer; mime: string } {
   let data = base64.trim();
-  let mime = "image/jpeg";
-  const dataUrlMatch = /^data:(image\/(?:jpeg|jpg|png|webp));base64,(.+)$/s.exec(data);
-  if (dataUrlMatch) {
-    mime = dataUrlMatch[1] === "image/jpg" ? "image/jpeg" : dataUrlMatch[1];
-    data = dataUrlMatch[2];
+  if (/^data:/i.test(data)) {
+    const match = /^data:([^;,]+);base64,(.+)$/is.exec(data);
+    if (!match) {
+      throw new Error("IMAGE_INVALID: geçersiz data URL");
+    }
+    if (!SUPPORTED_IMAGE_MIME.has(match[1].toLowerCase())) {
+      throw new Error("IMAGE_INVALID: desteklenmeyen format");
+    }
+    data = match[2];
   }
   if (data.length < 8) {
     throw new Error("IMAGE_INVALID: payload çok küçük");
@@ -215,11 +238,23 @@ export function validateImageData(
   if (buffer.length > maxDecodedBytes) {
     throw new Error("IMAGE_TOO_LARGE");
   }
-  // Magic bytes: JPEG (FFD8FF) veya PNG (89504E47)
-  const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8;
-  const isPng = buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e;
-  if (!isJpeg && !isPng) {
+  const mime = detectImageMime(buffer);
+  if (!mime) {
     throw new Error("IMAGE_INVALID: desteklenmeyen format");
   }
   return { buffer, mime };
+}
+
+/**
+ * Doğrulanmış bir görselden, kendi tespit edilen MIME'ını taşıyan bir data URL
+ * üretir. Cup ve tabak bağımsız çağrılır; biri diğerinin MIME'ını varsaymaz.
+ */
+export function toValidatedImageDataUrl(
+  base64: string,
+  maxDecodedBytes: number
+): { mime: string; dataUrl: string } {
+  const { mime } = validateImageData(base64, maxDecodedBytes);
+  const trimmed = base64.trim();
+  const data = trimmed.includes(",") ? trimmed.slice(trimmed.indexOf(",") + 1) : trimmed;
+  return { mime, dataUrl: `data:${mime};base64,${data}` };
 }

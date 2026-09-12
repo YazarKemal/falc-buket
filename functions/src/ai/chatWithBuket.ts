@@ -2,7 +2,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { OPENAI_API_KEY, getClient } from "../ai/openaiClient";
 import { CHAT_MODEL, CHAT_DAILY_LIMIT } from "../config/openaiModels";
 import { buketInstructions, MEMORY_EXTRACTION_INSTRUCTIONS } from "../prompts";
-import { memoryExtractionJsonSchema } from "../schemas";
+import { memoryExtractionJsonSchema, parseMemoryCandidates } from "../schemas";
 import { mergeMemories, buildMemoryBlock } from "../memory";
 import { topMemories, applyMemoryMerge, touchMemories, incrementUsage, getTodayUsage } from "../firestore/memoryRepository";
 import {
@@ -61,6 +61,7 @@ export const chatWithBuket = onCall(
     try {
       const response = await client.responses.create({
         model: CHAT_MODEL,
+        store: false,
         instructions: buketInstructions(memoryBlock),
         input: input as never,
         max_output_tokens: 900
@@ -82,6 +83,7 @@ export const chatWithBuket = onCall(
     try {
       const extraction = await client.responses.create({
         model: CHAT_MODEL,
+        store: false,
         instructions: MEMORY_EXTRACTION_INSTRUCTIONS,
         input: [
           {
@@ -98,8 +100,8 @@ export const chatWithBuket = onCall(
         max_output_tokens: 500
       });
       const raw = JSON.parse((extraction as { output_text?: string }).output_text || "{}");
-      const candidates = raw.memories ?? [];
-      if (Array.isArray(candidates) && candidates.length > 0) {
+      const candidates = parseMemoryCandidates(raw);
+      if (candidates.length > 0) {
         const merged = mergeMemories(memories, candidates);
         await applyMemoryMerge(uid, merged.toCreate, merged.toUpdate);
         memorySaved = merged.toCreate.length + merged.toUpdate.length > 0;

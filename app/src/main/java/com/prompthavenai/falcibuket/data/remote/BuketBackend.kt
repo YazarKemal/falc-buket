@@ -146,7 +146,7 @@ class FirebaseBuketBackend : BuketBackend {
     }
 
     private fun callable(name: String) =
-        FirebaseFunctions.getInstance().getHttpsCallable(name)
+        FirebaseFunctions.getInstance(BackendConfig.FUNCTIONS_REGION).getHttpsCallable(name)
 
     private fun asMap(data: Any?): Map<*, *> = (data as? Map<*, *>) ?: emptyMap<Any, Any>()
 
