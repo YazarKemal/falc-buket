@@ -5,6 +5,7 @@ import { mapProviderError, safeErrorInfo } from "./aiErrors";
 import { AiTextTurn } from "./aiProvider";
 import {
   CHAT_DAILY_LIMIT,
+  CHAT_FUNCTION_TIMEOUT_SECONDS,
   CHAT_MAX_TOKENS,
   MEMORY_MAX_TOKENS,
   MEMORY_REQUEST_TIMEOUT_MS
@@ -27,7 +28,7 @@ import {
 
 // TODO(production): Firebase App Check zorunlu kılınacak (enforceAppCheck: true).
 export const chatWithBuket = onCall(
-  { secrets: [ZAI_API_KEY], region: "europe-west1", timeoutSeconds: 120, memory: "256MiB" },
+  { secrets: [ZAI_API_KEY], region: "europe-west1", timeoutSeconds: CHAT_FUNCTION_TIMEOUT_SECONDS, memory: "256MiB" },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Oturum gerekli.");

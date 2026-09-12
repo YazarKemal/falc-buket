@@ -15,4 +15,10 @@ object BackendConfig {
      * provider (150 sn) < function (180 sn) < bu istemci değeri (210 sn).
      */
     const val COFFEE_CALLABLE_TIMEOUT_SECONDS = 210L
+
+    /**
+     * Chat callable zaman aşımı. Hiyerarşi:
+     * provider (~65 sn) < function (120 sn) < bu istemci değeri (150 sn).
+     */
+    const val CHAT_CALLABLE_TIMEOUT_SECONDS = 150L
 }

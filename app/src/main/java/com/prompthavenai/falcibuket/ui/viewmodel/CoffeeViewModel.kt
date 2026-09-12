@@ -10,7 +10,6 @@ import androidx.lifecycle.viewModelScope
 import com.prompthavenai.falcibuket.data.model.CoffeeResult
 import com.prompthavenai.falcibuket.data.remote.BuketBackend
 import com.prompthavenai.falcibuket.data.remote.FortuneError
-import com.prompthavenai.falcibuket.data.remote.FortuneErrorCode
 import com.prompthavenai.falcibuket.data.remote.FortuneErrorMapper
 import com.prompthavenai.falcibuket.data.remote.ImageCompressor
 import com.prompthavenai.falcibuket.data.remote.ImageProcessingException
@@ -20,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 sealed interface CoffeeUiState {
     data object Idle : CoffeeUiState
@@ -42,6 +42,23 @@ class CoffeeViewModel @JvmOverloads constructor(
 
     private var lastCup: Uri? = null
     private var lastSaucer: Uri? = null
+
+    // Ekran yaşam döngüsünden bağımsız geçici kamera dosyaları. Retry çalışsın
+    // diye ekran dispose olduğunda DEĞİL, ViewModel temizlenince silinir.
+    private val tempFiles = mutableListOf<File>()
+
+    /** Kamera ile üretilen geçici dosyayı ViewModel sahipliğine alır. */
+    fun trackTempFile(file: File) {
+        synchronized(tempFiles) { tempFiles.add(file) }
+    }
+
+    override fun onCleared() {
+        synchronized(tempFiles) {
+            tempFiles.forEach { runCatching { it.delete() } }
+            tempFiles.clear()
+        }
+        super.onCleared()
+    }
 
     fun analyze(cupUri: Uri, saucerUri: Uri?, question: String? = null) {
         if (_state.value is CoffeeUiState.Loading) return
@@ -80,39 +97,9 @@ class CoffeeViewModel @JvmOverloads constructor(
             "COFFEE_IMAGE_STAGE slot=$slot stage=BASE64_READY success=true bytes=${processed.byteCount} " +
                 "width=${processed.width} height=${processed.height} mime=${processed.mime}"
         )
-        // Kamera geçici dosyalarını yalnızca başarılı işleme sonrası temizle.
-        if (uri.scheme == "file") {
-            withContext(Dispatchers.IO) {
-                runCatching { uri.path?.let { java.io.File(it).delete() } }
-            }
-        }
+        // Kaynak dosya burada SİLİNMEZ; ön işleme tamamlanır ve retry için dosya
+        // geçerli kalır. Temizlik ViewModel.onCleared() tarafından yapılır.
         return ImageCompressor.toBase64(processed.jpeg)
-    }
-
-    /**
-     * DEBUG-ONLY: Aynı ön işleme hattını çalıştırır ama Firebase çağrısı YAPMAZ.
-     * Cup ve tabak bağımsız raporlanır; hiçbir zaman callable çağrılmaz.
-     */
-    suspend fun validatePreprocessing(cupUri: Uri?, saucerUri: Uri?): String {
-        val cup = validateOne("CUP", cupUri, required = true)
-        val saucer = validateOne("SAUCER", saucerUri, required = false)
-        val report = "$cup | $saucer"
-        Log.i(TAG, "COFFEE_PREPROCESS $report")
-        return report
-    }
-
-    private suspend fun validateOne(slot: String, uri: Uri?, required: Boolean): String {
-        if (uri == null) return "$slot=${if (required) "FAIL_MISSING" else "SKIP"}"
-        return try {
-            val p = withContext(Dispatchers.IO) { ImageCompressor.process(getApplication(), uri) }
-            "$slot=PASS bytes=${p.byteCount} dims=${p.width}x${p.height} mime=${p.mime}"
-        } catch (e: ImageProcessingException) {
-            "$slot=FAIL code=${e.code} stage=${e.stage}"
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            "$slot=FAIL code=${FortuneErrorCode.IMAGE_PROCESSING_FAILED} stage=UNKNOWN"
-        }
     }
 
     fun reset() {

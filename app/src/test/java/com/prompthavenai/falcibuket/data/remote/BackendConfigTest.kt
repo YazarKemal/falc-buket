@@ -27,4 +27,10 @@ class BackendConfigTest {
         assertEquals(210L, BackendConfig.COFFEE_CALLABLE_TIMEOUT_SECONDS)
         assertTrue(BackendConfig.COFFEE_CALLABLE_TIMEOUT_SECONDS > 180L)
     }
+
+    @Test
+    fun `chat callable timeout is explicit and above the function deadline`() {
+        assertEquals(150L, BackendConfig.CHAT_CALLABLE_TIMEOUT_SECONDS)
+        assertTrue(BackendConfig.CHAT_CALLABLE_TIMEOUT_SECONDS > 120L)
+    }
 }

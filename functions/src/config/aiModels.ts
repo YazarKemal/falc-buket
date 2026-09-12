@@ -31,5 +31,12 @@ export const VISION_FUNCTION_TIMEOUT_SECONDS = 180;
 /** Android Coffee callable zaman aşımı (sn). Provider'dan ~30 sn sonra. */
 export const VISION_CLIENT_TIMEOUT_SECONDS = 210;
 
+/**
+ * Chat hiyerarşisi: iki sıralı metin çağrısı (45 + 20 sn) < fonksiyon < istemci.
+ * Coffee'nin vision bütçeleriyle karıştırılmamalıdır.
+ */
+export const CHAT_FUNCTION_TIMEOUT_SECONDS = 120;
+export const CHAT_CLIENT_TIMEOUT_SECONDS = 150;
+
 /** Ağ hatalarında sessiz yeniden deneme yok; hata güvenli biçimde eşlenir. */
 export const AI_MAX_RETRIES = 0;

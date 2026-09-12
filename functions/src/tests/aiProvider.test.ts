@@ -6,6 +6,9 @@ import OpenAI from "openai";
 import {
   AI_BASE_URL,
   AI_MAX_RETRIES,
+  CHAT_CLIENT_TIMEOUT_SECONDS,
+  CHAT_FUNCTION_TIMEOUT_SECONDS,
+  MEMORY_REQUEST_TIMEOUT_MS,
   TEXT_MODEL,
   TEXT_REQUEST_TIMEOUT_MS,
   VISION_CLIENT_TIMEOUT_SECONDS,
@@ -44,6 +47,18 @@ test("vision timeout hierarchy is provider < function < client", () => {
     VISION_FUNCTION_TIMEOUT_SECONDS * 1000 < VISION_CLIENT_TIMEOUT_SECONDS * 1000,
     "function < client"
   );
+});
+
+test("chat timeout hierarchy is provider < function < client", () => {
+  const providerBudget = TEXT_REQUEST_TIMEOUT_MS + MEMORY_REQUEST_TIMEOUT_MS;
+  assert.ok(providerBudget < CHAT_FUNCTION_TIMEOUT_SECONDS * 1000, "provider < function");
+  assert.ok(CHAT_FUNCTION_TIMEOUT_SECONDS * 1000 < CHAT_CLIENT_TIMEOUT_SECONDS * 1000, "function < client");
+});
+
+test("client timeout constants match the Android values", () => {
+  // Android BackendConfigTest pins the same literals (cross-repo drift guard).
+  assert.equal(VISION_CLIENT_TIMEOUT_SECONDS, 210);
+  assert.equal(CHAT_CLIENT_TIMEOUT_SECONDS, 150);
 });
 
 // ---- vision content --------------------------------------------------------

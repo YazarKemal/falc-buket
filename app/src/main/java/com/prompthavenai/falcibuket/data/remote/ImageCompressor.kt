@@ -72,37 +72,56 @@ object ImageCompressor {
             throw ImageProcessingException(FortuneErrorCode.IMAGE_DECODE_FAILED, "DECODE")
         }
 
-        val rotated = rotateIfNeeded(decoded, readOrientation(context, uri))
-        val (targetW, targetH) = computeScaledSize(rotated.width, rotated.height, maxEdge)
-        val scaled = if (targetW != rotated.width || targetH != rotated.height) {
-            Bitmap.createScaledBitmap(rotated, targetW, targetH, true)
-        } else {
-            rotated
-        }
+        // Decode sonrası tüm aşamalar (EXIF/rotate/scale/compress) OOM dahil sınıflandırılır.
+        var current: Bitmap = decoded
+        try {
+            val rotated = rotateIfNeeded(current, readOrientation(context, uri))
+            if (rotated !== current) {
+                current.recycle()
+                current = rotated
+            }
+            val (targetW, targetH) = computeScaledSize(current.width, current.height, maxEdge)
+            if (targetW != current.width || targetH != current.height) {
+                val scaledBmp = Bitmap.createScaledBitmap(current, targetW, targetH, true)
+                if (scaledBmp !== current) {
+                    current.recycle()
+                    current = scaledBmp
+                }
+            }
 
-        // Yalnızca hat tarafından üretilen ara bitmap'ler serbest bırakılır.
-        if (rotated !== decoded) decoded.recycle()
-        if (scaled !== rotated) rotated.recycle()
+            val width = current.width
+            val height = current.height
+            val out = ByteArrayOutputStream()
+            val compressedOk = try {
+                current.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            } finally {
+                current.recycle()
+            }
+            if (!compressedOk) {
+                throw ImageProcessingException(FortuneErrorCode.IMAGE_PROCESSING_FAILED, "COMPRESS")
+            }
+            val bytes = out.toByteArray()
+            if (bytes.isEmpty() || !isJpeg(bytes)) {
+                throw ImageProcessingException(FortuneErrorCode.IMAGE_PROCESSING_FAILED, "COMPRESS")
+            }
+            if (bytes.size > MAX_PAYLOAD_BYTES) {
+                throw ImageProcessingException(FortuneErrorCode.IMAGE_TOO_LARGE, "SIZE_CHECK")
+            }
+            return ProcessedImage(bytes, OUTPUT_MIME, width, height)
+        } catch (e: ImageProcessingException) {
+            recycleQuietly(current)
+            throw e
+        } catch (e: OutOfMemoryError) {
+            recycleQuietly(current)
+            throw ImageProcessingException(FortuneErrorCode.IMAGE_TOO_LARGE, "PROCESS", cause = e)
+        } catch (e: Exception) {
+            recycleQuietly(current)
+            throw ImageProcessingException(FortuneErrorCode.IMAGE_PROCESSING_FAILED, "PROCESS", cause = e)
+        }
+    }
 
-        val width = scaled.width
-        val height = scaled.height
-        val out = ByteArrayOutputStream()
-        val compressedOk = try {
-            scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
-        } finally {
-            scaled.recycle()
-        }
-        if (!compressedOk) {
-            throw ImageProcessingException(FortuneErrorCode.IMAGE_PROCESSING_FAILED, "COMPRESS")
-        }
-        val bytes = out.toByteArray()
-        if (bytes.isEmpty() || !isJpeg(bytes)) {
-            throw ImageProcessingException(FortuneErrorCode.IMAGE_PROCESSING_FAILED, "COMPRESS")
-        }
-        if (bytes.size > MAX_PAYLOAD_BYTES) {
-            throw ImageProcessingException(FortuneErrorCode.IMAGE_TOO_LARGE, "SIZE_CHECK")
-        }
-        return ProcessedImage(bytes, OUTPUT_MIME, width, height)
+    private fun recycleQuietly(bitmap: Bitmap) {
+        runCatching { if (!bitmap.isRecycled) bitmap.recycle() }
     }
 
     /** Sadece boyutları okur; decode sonucu null olsa bile geçerli stream başarıdır. */

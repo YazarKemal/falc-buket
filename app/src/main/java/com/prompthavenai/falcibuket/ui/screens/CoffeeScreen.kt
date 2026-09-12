@@ -1,8 +1,6 @@
 package com.prompthavenai.falcibuket.ui.screens
 
-import android.content.pm.ApplicationInfo
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,7 +16,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -34,40 +31,58 @@ import com.prompthavenai.falcibuket.R
 import com.prompthavenai.falcibuket.navigation.Routes
 import com.prompthavenai.falcibuket.ui.components.GoldButton
 import com.prompthavenai.falcibuket.ui.components.PhotoUploadSlot
-import com.prompthavenai.falcibuket.ui.components.newCameraUri
+import com.prompthavenai.falcibuket.ui.components.newCameraCapture
 import com.prompthavenai.falcibuket.ui.components.uriSaver
+import com.prompthavenai.falcibuket.ui.debug.CoffeePreprocessDebugTool
 import com.prompthavenai.falcibuket.ui.theme.*
 import com.prompthavenai.falcibuket.ui.viewmodel.CoffeeViewModel
-import kotlinx.coroutines.launch
+import java.io.File
+
+private fun deleteTempFile(file: File?) {
+    if (file != null) runCatching { file.delete() }
+}
 
 @Composable
 fun CoffeeScreen(nav: NavController) {
     val context = LocalContext.current
     val vm: CoffeeViewModel = viewModel(viewModelStoreOwner = context as androidx.lifecycle.ViewModelStoreOwner)
-    val scope = rememberCoroutineScope()
-    val isDebuggable = remember(context) {
-        (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-    }
 
     var cupImage by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
     var saucerImage by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
-
-    var pendingCameraSlot by remember { mutableStateOf(0) }
+    // Yalnızca iptal/yerine-koyma anında silinen bekleyen kamera dosyası.
+    // Kabul edilen dosyaların temizliği ViewModel yaşam döngüsüne aittir.
+    var pendingCapture by remember { mutableStateOf<File?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingCameraSlot by remember { mutableStateOf(0) }
 
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        if (ok && cameraUri != null) {
+        val capturedUri = cameraUri
+        if (ok && capturedUri != null) {
             when (pendingCameraSlot) {
-                1 -> cupImage = cameraUri
-                2 -> saucerImage = cameraUri
+                1 -> cupImage = capturedUri
+                2 -> saucerImage = capturedUri
             }
+        } else {
+            deleteTempFile(pendingCapture)
         }
+        pendingCapture = null
+        cameraUri = null
     }
     val pickCup = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { picked ->
-        if (picked != null) cupImage = picked
+        if (picked != null) {
+            deleteTempFile(pendingCapture)
+            pendingCapture = null
+            cameraUri = null
+            cupImage = picked
+        }
     }
     val pickSaucer = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { picked ->
-        if (picked != null) saucerImage = picked
+        if (picked != null) {
+            deleteTempFile(pendingCapture)
+            pendingCapture = null
+            cameraUri = null
+            saucerImage = picked
+        }
     }
 
     Box(Modifier.fillMaxSize().background(NightBg), contentAlignment = Alignment.TopCenter) {
@@ -96,8 +111,14 @@ fun CoffeeScreen(nav: NavController) {
                         uri = cupImage,
                         modifier = m,
                         onCamera = {
+                            deleteTempFile(pendingCapture)
                             pendingCameraSlot = 1
-                            cameraUri = newCameraUri(context, "coffee").also { takePicture.launch(it) }
+                            val capture = newCameraCapture(context, "coffee")
+                            // ViewModel sahiplenir: ekran kapansa/rotasyon olsa da temizlenir.
+                            vm.trackTempFile(capture.file)
+                            pendingCapture = capture.file
+                            cameraUri = capture.uri
+                            takePicture.launch(capture.uri)
                         },
                         onGallery = {
                             pickCup.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -110,8 +131,13 @@ fun CoffeeScreen(nav: NavController) {
                         uri = saucerImage,
                         modifier = m,
                         onCamera = {
+                            deleteTempFile(pendingCapture)
                             pendingCameraSlot = 2
-                            cameraUri = newCameraUri(context, "coffee").also { takePicture.launch(it) }
+                            val capture = newCameraCapture(context, "coffee")
+                            vm.trackTempFile(capture.file)
+                            pendingCapture = capture.file
+                            cameraUri = capture.uri
+                            takePicture.launch(capture.uri)
                         },
                         onGallery = {
                             pickSaucer.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -142,21 +168,12 @@ fun CoffeeScreen(nav: NavController) {
                     }
                 )
                 Spacer(Modifier.height(20.dp))
-                // DEBUG-ONLY: aynı ön işleme hattını çalıştırır, Firebase'e GÖNDERMEZ.
-                if (isDebuggable) {
-                    TextButton(
-                        onClick = {
-                            scope.launch {
-                                val report = vm.validatePreprocessing(cupImage, saucerImage)
-                                Toast.makeText(context, report, Toast.LENGTH_LONG).show()
-                            }
-                        },
-                        enabled = cupImage != null,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Ön işleme testi (debug)", color = TextMuted)
-                    }
-                }
+                // Source-set gating: debug'da gerçek araç, release'te no-op (kod release'te yok).
+                CoffeePreprocessDebugTool(
+                    cup = cupImage,
+                    saucer = saucerImage,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(20.dp))
             }
         }

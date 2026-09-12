@@ -46,7 +46,9 @@ class FirebaseBuketBackend : BuketBackend {
             put("message", message)
             conversationId?.let { put("conversationId", it) }
         }
-        val result = callable("chatWithBuket").call(payload).await()
+        val result = callable("chatWithBuket", BackendConfig.CHAT_CALLABLE_TIMEOUT_SECONDS)
+            .call(payload)
+            .await()
         val map = asMap(result.getData())
         return ChatReply(
             conversationId = map["conversationId"] as? String ?: "",
