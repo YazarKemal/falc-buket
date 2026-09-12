@@ -5,6 +5,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.functions.FirebaseFunctionsException
+import com.google.firebase.functions.HttpsCallableReference
 import com.prompthavenai.falcibuket.data.model.CoffeeResult
 import com.prompthavenai.falcibuket.data.model.ReadingEntry
 import com.prompthavenai.falcibuket.data.model.TimeWindow
@@ -145,8 +146,17 @@ class FirebaseBuketBackend : BuketBackend {
         batch.commit().await()
     }
 
-    private fun callable(name: String) =
-        FirebaseFunctions.getInstance(BackendConfig.FUNCTIONS_REGION).getHttpsCallable(name)
+    /**
+     * Tüm çağrılabilir fonksiyonlar için tek merkezi kimlik kapısı: mevcut
+     * anonim kullanıcı yeniden kullanılır, yoksa signInAnonymously() yapılır ve
+     * ancak başarılı kimlik doğrulamadan sonra çağrı referansı döner. Böylece
+     * hiçbir ekran kendi sign-in mantığını kopyalamaz ve hiçbir backend çağrısı
+     * kimliksiz çalışmaz.
+     */
+    private suspend fun callable(name: String): HttpsCallableReference {
+        FirebaseGate.ensureUid()
+        return FirebaseFunctions.getInstance(BackendConfig.FUNCTIONS_REGION).getHttpsCallable(name)
+    }
 
     private fun asMap(data: Any?): Map<*, *> = (data as? Map<*, *>) ?: emptyMap<Any, Any>()
 
