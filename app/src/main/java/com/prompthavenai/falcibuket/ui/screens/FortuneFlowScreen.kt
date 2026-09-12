@@ -3,6 +3,7 @@ package com.prompthavenai.falcibuket.ui.screens
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.navigation.NavController
+import com.prompthavenai.falcibuket.data.model.FortuneInteractionArt
 import com.prompthavenai.falcibuket.data.model.FortuneType
 import com.prompthavenai.falcibuket.data.model.InputMode
 import com.prompthavenai.falcibuket.navigation.Routes
@@ -37,7 +38,7 @@ fun FortuneFlowScreen(nav: NavController, fortuneId: String) {
                     title = photoTitle(type),
                     subtitle = "Net bir fotoğraf yükle; işaretleri birlikte okuyalım.",
                     cta = "Yorumumu Gör",
-                    artworkRes = type.artworkRes,
+                    artworkRes = FortuneInteractionArt.orCategoryArt(type),
                     onBack = back,
                     onSubmit = { toResult("") }
                 )
@@ -58,7 +59,7 @@ fun FortuneFlowScreen(nav: NavController, fortuneId: String) {
             subtitle = type.subtitle,
             prompt = "Rüyanı olabildiğince ayrıntılı anlat…",
             cta = "Rüyamı Yorumla",
-            artworkRes = type.artworkRes,
+            artworkRes = FortuneInteractionArt.orCategoryArt(type),
             onBack = back,
             maxChars = 4000,
             minLines = 5,
@@ -91,6 +92,7 @@ fun FortuneFlowScreen(nav: NavController, fortuneId: String) {
             spec = symbolSpecFor(type),
             cta = "Yorumumu Gör",
             onBack = back,
+            artworkRes = FortuneInteractionArt.orCategoryArt(type),
             onSubmit = { toResult("") }
         )
 

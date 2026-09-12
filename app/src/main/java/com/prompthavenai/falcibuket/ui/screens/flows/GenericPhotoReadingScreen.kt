@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,13 @@ import com.prompthavenai.falcibuket.ui.components.ReadingPreviewNotice
 import com.prompthavenai.falcibuket.ui.components.newCameraUri
 import com.prompthavenai.falcibuket.ui.components.uriSaver
 import com.prompthavenai.falcibuket.ui.theme.TextMuted
+import java.io.File
+
+private fun deleteCameraFile(uri: Uri?) {
+    if (uri?.scheme == "file") {
+        runCatching { uri.path?.let { File(it).delete() } }
+    }
+}
 
 /** Reusable single-photo flow for PHOTO_VISION types other than coffee. */
 @Composable
@@ -47,10 +55,22 @@ fun GenericPhotoReadingScreen(
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
 
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        if (ok) photo = cameraUri
+        if (ok && cameraUri != null) {
+            deleteCameraFile(photo)
+            photo = cameraUri
+        } else {
+            deleteCameraFile(cameraUri)
+        }
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { picked ->
         if (picked != null) photo = picked
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            deleteCameraFile(photo)
+            deleteCameraFile(cameraUri)
+        }
     }
 
     ReadingFlowScaffold(title = title, subtitle = subtitle, onBack = onBack) {

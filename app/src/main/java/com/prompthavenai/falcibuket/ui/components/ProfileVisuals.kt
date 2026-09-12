@@ -39,11 +39,14 @@ import com.prompthavenai.falcibuket.ui.theme.SurfacePlum
 import com.prompthavenai.falcibuket.ui.theme.TextCream
 import com.prompthavenai.falcibuket.ui.theme.TextMuted
 
+/** Single source of truth for the mock/local streak value until real data lands. */
+const val MOCK_STREAK_DAYS = 2
+
 /** Profile identity header with avatar, title, compact stats and decorative artwork. */
 @Composable
 fun ProfileIdentityHeader(
     factCount: Int,
-    streakDays: Int = 2,
+    streakDays: Int = MOCK_STREAK_DAYS,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -114,7 +117,7 @@ private fun HeaderStat(value: String, label: String) {
 
 /** Premium-looking daily streak card. Value is local/mock for now. */
 @Composable
-fun StreakCard(days: Int = 2, modifier: Modifier = Modifier) {
+fun StreakCard(days: Int = MOCK_STREAK_DAYS, modifier: Modifier = Modifier) {
     Row(
         modifier
             .fillMaxWidth()

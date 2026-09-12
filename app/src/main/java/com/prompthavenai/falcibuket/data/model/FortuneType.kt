@@ -24,7 +24,7 @@ enum class FortuneType(
     ),
     TAROT(
         "tarot", "Tarot", "Kartların sana ne söylüyor?",
-        FortuneCategory.POPULAR, InputMode.CARD_SELECTION, AiMode.STRUCTURED,
+        FortuneCategory.CARDS, InputMode.CARD_SELECTION, AiMode.STRUCTURED,
         isPremium = false, memoryEnabled = true, historyEnabled = true
     ),
     LOVE(

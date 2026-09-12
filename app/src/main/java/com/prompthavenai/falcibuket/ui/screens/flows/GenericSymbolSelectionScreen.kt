@@ -1,5 +1,7 @@
 package com.prompthavenai.falcibuket.ui.screens.flows
 
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +23,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.prompthavenai.falcibuket.ui.components.GoldButton
@@ -48,6 +52,7 @@ fun GenericSymbolSelectionScreen(
     spec: SymbolSpec,
     cta: String,
     onBack: () -> Unit,
+    @DrawableRes artworkRes: Int? = null,
     onSubmit: (String) -> Unit
 ) {
     var selected by rememberSaveable { mutableStateOf(listOf<String>()) }
@@ -55,6 +60,14 @@ fun GenericSymbolSelectionScreen(
     val random = remember { java.util.Random() }
 
     ReadingFlowScaffold(title = title, subtitle = subtitle, onBack = onBack, maxWidth = 1000.dp) {
+        if (artworkRes != null) {
+            Image(
+                painterResource(artworkRes), null,
+                modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(24.dp)),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(Modifier.height(20.dp))
+        }
         if (spec.randomCast) {
             GoldButton(
                 spec.castLabel,
