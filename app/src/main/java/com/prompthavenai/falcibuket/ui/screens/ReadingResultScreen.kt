@@ -305,7 +305,7 @@ private fun GenericResultContent(
                     Spacer(Modifier.height(16.dp))
                     if (display.historyEnabled) {
                         Text(
-                            "Bu fal Fallarım listende saklandı.",
+                            "Kaydetme bu sürümde simüle edilir; gerçek arşiv bağlantısı yakında.",
                             style = MaterialTheme.typography.labelMedium,
                             color = TextMuted
                         )

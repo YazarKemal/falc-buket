@@ -45,7 +45,6 @@ import com.prompthavenai.falcibuket.ui.theme.TextCream
 import com.prompthavenai.falcibuket.ui.theme.TextMuted
 
 private const val FILTER_ALL = "all"
-private const val FILTER_POPULAR = "popular"
 
 @Composable
 fun FortuneCatalogScreen(nav: NavController) {
@@ -80,7 +79,6 @@ fun FortuneCatalogScreen(nav: NavController) {
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     item { CatalogChip("Tümü", filter == FILTER_ALL) { filter = FILTER_ALL } }
-                    item { CatalogChip("Popüler", filter == FILTER_POPULAR) { filter = FILTER_POPULAR } }
                     items(FortuneCategory.entries) { category ->
                         CatalogChip(
                             label = category.title,
@@ -92,10 +90,6 @@ fun FortuneCatalogScreen(nav: NavController) {
             }
 
             when {
-                filter == FILTER_POPULAR -> item {
-                    FortuneCategorySection("Popüler", FortuneCatalog.popular, onOpen)
-                }
-
                 filter == FILTER_ALL -> {
                     FortuneCategory.entries.forEach { category ->
                         val types = FortuneCatalog.forCategory(category)

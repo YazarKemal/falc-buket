@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,8 +50,8 @@ fun GenericSymbolSelectionScreen(
     onBack: () -> Unit,
     onSubmit: (String) -> Unit
 ) {
-    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var castOutcome by remember { mutableStateOf<String?>(null) }
+    var selected by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var castOutcome by rememberSaveable { mutableStateOf("") }
     val random = remember { java.util.Random() }
 
     ReadingFlowScaffold(title = title, subtitle = subtitle, onBack = onBack, maxWidth = 1000.dp) {
@@ -61,8 +62,8 @@ fun GenericSymbolSelectionScreen(
                 onClick = { castOutcome = spec.symbols[random.nextInt(spec.symbols.size)] }
             )
             Spacer(Modifier.height(20.dp))
-            castOutcome?.let { outcome ->
-                Text("Sonuç: $outcome", style = MaterialTheme.typography.headlineMedium, color = Gold)
+            if (castOutcome.isNotBlank()) {
+                Text("Sonuç: $castOutcome", style = MaterialTheme.typography.headlineMedium, color = Gold)
             }
         } else {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -96,9 +97,9 @@ fun GenericSymbolSelectionScreen(
         Spacer(Modifier.height(24.dp))
         GoldButton(
             cta,
-            enabled = if (spec.randomCast) castOutcome != null else selected.size == spec.selectCount,
+            enabled = if (spec.randomCast) castOutcome.isNotBlank() else selected.size == spec.selectCount,
             modifier = Modifier.fillMaxWidth(),
-            onClick = { onSubmit(castOutcome ?: selected.joinToString(", ")) }
+            onClick = { onSubmit(castOutcome.ifBlank { selected.joinToString(", ") }) }
         )
         Spacer(Modifier.height(12.dp))
         ReadingPreviewNotice()
