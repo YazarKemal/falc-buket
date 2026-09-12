@@ -25,11 +25,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.prompthavenai.falcibuket.R
 import com.prompthavenai.falcibuket.data.model.ChatMessage
+import com.prompthavenai.falcibuket.ui.components.MysticBackground
 import com.prompthavenai.falcibuket.ui.theme.*
 import com.prompthavenai.falcibuket.ui.viewmodel.ChatViewModel
 
@@ -46,89 +48,96 @@ fun ChatScreen(nav: NavController) {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(NightBg).imePadding()) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { nav.popBackStack() }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri", tint = TextCream)
-            }
-            Image(
-                painterResource(R.drawable.teller_avatar), "Buket",
-                modifier = Modifier.size(44.dp).clip(CircleShape),
-                contentScale = ContentScale.Crop
-            )
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text("FalcıBuket", style = MaterialTheme.typography.titleMedium, color = TextCream)
-                Text("Senin için burada ✨", style = MaterialTheme.typography.labelMedium, color = Gold)
-            }
-        }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val bubbleMax = minOf(maxWidth * 0.82f, 520.dp)
+        MysticBackground(R.drawable.bg_mystic_soft_01) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = 960.dp).fillMaxSize().imePadding()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { nav.popBackStack() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri", tint = TextCream)
+                        }
+                        Image(
+                            painterResource(R.drawable.teller_avatar), "Buket",
+                            modifier = Modifier.size(44.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("FalcıBuket", style = MaterialTheme.typography.titleMedium, color = TextCream)
+                            Text("Senin için burada ✨", style = MaterialTheme.typography.labelMedium, color = Gold)
+                        }
+                    }
 
-        state.error?.let { err ->
-            ErrorBanner(
-                message = err.userMessage,
-                onRetry = if (state.messages.any { it.failed }) vm::retryLastFailed else null
-            )
-        }
+                    state.error?.let { err ->
+                        ErrorBanner(
+                            message = err.userMessage,
+                            onRetry = if (state.messages.any { it.failed }) vm::retryLastFailed else null
+                        )
+                    }
 
-        LazyColumn(
-            Modifier.weight(1f),
-            state = listState,
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (state.loading && state.messages.isEmpty()) {
-                item { Text("Buket geliyor…", color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
-            }
-            items(state.messages) { msg -> MessageBubble(msg) }
-            if (state.sending) {
-                item { TypingIndicator() }
-            }
-        }
+                    LazyColumn(
+                        Modifier.weight(1f),
+                        state = listState,
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (state.loading && state.messages.isEmpty()) {
+                            item { Text("Buket geliyor…", color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
+                        }
+                        items(state.messages) { msg -> MessageBubble(msg, bubbleMax) }
+                        if (state.sending) {
+                            item { TypingIndicator() }
+                        }
+                    }
 
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(SurfacePlum)
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextField(
-                value = input,
-                onValueChange = { input = it },
-                placeholder = { Text("Buket'e bir şey anlat...", color = TextMuted) },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(
-                onClick = {
-                    vm.send(input)
-                    input = ""
-                },
-                enabled = input.isNotBlank() && !state.sending
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send, "Gönder",
-                    tint = if (input.isNotBlank() && !state.sending) Gold else TextMuted
-                )
+                    Row(
+                        Modifier.fillMaxWidth().padding(12.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(SurfacePlum)
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            placeholder = { Text("Buket'e bir şey anlat...", color = TextMuted) },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = {
+                                vm.send(input)
+                                input = ""
+                            },
+                            enabled = input.isNotBlank() && !state.sending
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send, "Gönder",
+                                tint = if (input.isNotBlank() && !state.sending) Gold else TextMuted
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MessageBubble(msg: ChatMessage) {
+private fun MessageBubble(msg: ChatMessage, maxWidth: Dp) {
     Box(Modifier.fillMaxWidth(), contentAlignment = if (msg.fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
         Box(
             Modifier
-                .widthIn(max = 300.dp)
+                .widthIn(max = maxWidth)
                 .clip(
                     RoundedCornerShape(
                         topStart = 20.dp, topEnd = 20.dp,

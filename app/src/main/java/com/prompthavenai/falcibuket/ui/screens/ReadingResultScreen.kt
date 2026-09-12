@@ -23,7 +23,11 @@ import com.prompthavenai.falcibuket.R
 import com.prompthavenai.falcibuket.data.model.CoffeeResult
 import com.prompthavenai.falcibuket.data.model.Reading
 import com.prompthavenai.falcibuket.data.repository.FortuneRepositoryHolder
+import com.prompthavenai.falcibuket.ui.components.CoffeeLoadingVisual
 import com.prompthavenai.falcibuket.ui.components.GoldButton
+import com.prompthavenai.falcibuket.ui.components.MysticBackground
+import com.prompthavenai.falcibuket.ui.components.ReadingArtworkHeader
+import com.prompthavenai.falcibuket.ui.model.ReadingType
 import com.prompthavenai.falcibuket.ui.theme.*
 import com.prompthavenai.falcibuket.ui.viewmodel.CoffeeUiState
 import com.prompthavenai.falcibuket.ui.viewmodel.CoffeeViewModel
@@ -35,6 +39,8 @@ private val loadingStages = listOf(
     "İşaretleri inceliyorum…",
     "Geçmiş fallarınla bağlantı kuruyorum…"
 )
+
+private const val ResultMaxWidth = 840
 
 @Composable
 fun ReadingResultScreen(nav: NavController, type: String) {
@@ -49,15 +55,7 @@ private fun CoffeeResultContent(nav: NavController) {
     )
     val state by vm.state.collectAsState()
 
-    Box(Modifier.fillMaxSize()) {
-        Image(
-            painterResource(R.drawable.result_background), null,
-            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.35f
-        )
-        Box(Modifier.fillMaxSize().background(
-            Brush.verticalGradient(listOf(NightBg.copy(alpha = 0.85f), NightBg.copy(alpha = 0.95f))))
-        )
-
+    MysticBackground(R.drawable.bg_mystic_soft_02) {
         when (val s = state) {
             is CoffeeUiState.Loading -> {
                 var stage by remember { mutableStateOf(0) }
@@ -67,22 +65,23 @@ private fun CoffeeResultContent(nav: NavController) {
                         stage = (stage + 1).coerceAtMost(loadingStages.lastIndex)
                     }
                 }
-                val shimmer = rememberInfiniteTransition(label = "shimmer")
-                val shimmerAlpha by shimmer.animateFloat(
-                    0.3f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "a"
-                )
                 Column(
-                    Modifier.align(Alignment.Center),
+                    Modifier.align(Alignment.Center).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Image(
-                        painterResource(R.drawable.teller_avatar), null,
-                        modifier = Modifier.size(120.dp).clip(RoundedCornerShape(60.dp)).alpha(shimmerAlpha),
-                        contentScale = ContentScale.Crop
+                    CoffeeLoadingVisual()
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        loadingStages[stage],
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Gold,
+                        textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(18.dp))
-                    Text(loadingStages[stage], style = MaterialTheme.typography.titleMedium, color = Gold, textAlign = TextAlign.Center)
-                    Text("Bu birkaç saniye sürebilir ✨", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                    Text(
+                        "Bu birkaç saniye sürebilir ✨",
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
             is CoffeeUiState.Error -> {
@@ -107,82 +106,90 @@ private fun CoffeeResultContent(nav: NavController) {
 private fun CoffeeResultBody(nav: NavController, r: CoffeeResult) {
     var revealed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { revealed = true }
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .alpha(if (revealed) 1f else 0f).padding(20.dp)
+    Box(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        contentAlignment = Alignment.TopCenter
     ) {
-        Text(r.title, style = MaterialTheme.typography.headlineMedium, color = Gold)
-        Spacer(Modifier.height(8.dp))
-        Text(r.summary, style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(20.dp))
+        Column(
+            Modifier.widthIn(max = ResultMaxWidth.dp).fillMaxWidth()
+                .alpha(if (revealed) 1f else 0f).padding(20.dp)
+        ) {
+            ReadingArtworkHeader(ReadingType.COFFEE)
+            Spacer(Modifier.height(18.dp))
+            Text(r.title, style = MaterialTheme.typography.headlineMedium, color = Gold)
+            Spacer(Modifier.height(8.dp))
+            Text(r.summary, style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(20.dp))
 
-        if (r.visualObservations.isNotEmpty()) {
-            Text("Fincanda Beliren İşaretler", style = MaterialTheme.typography.titleMedium, color = Rose)
-            Spacer(Modifier.height(10.dp))
-            r.visualObservations.forEach { obs ->
-                Box(
-                    Modifier.fillMaxWidth().padding(bottom = 12.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(SurfacePlumSoft)
-                        .padding(18.dp)
-                ) {
-                    Column {
-                        Text("✦ ${obs.observation}", style = MaterialTheme.typography.bodyMedium, color = TextCream)
-                        Spacer(Modifier.height(6.dp))
-                        Text(obs.interpretation, style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+            if (r.visualObservations.isNotEmpty()) {
+                Text("Fincanda Beliren İşaretler", style = MaterialTheme.typography.titleMedium, color = Rose)
+                Spacer(Modifier.height(10.dp))
+                r.visualObservations.forEach { obs ->
+                    Box(
+                        Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(SurfacePlumSoft)
+                            .padding(18.dp)
+                    ) {
+                        Column {
+                            Text("✦ ${obs.observation}", style = MaterialTheme.typography.bodyMedium, color = TextCream)
+                            Spacer(Modifier.height(6.dp))
+                            Text(obs.interpretation, style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+                        }
                     }
                 }
+                Spacer(Modifier.height(8.dp))
             }
-            Spacer(Modifier.height(8.dp))
-        }
 
-        Section("Genel Enerji", r.generalEnergy)
-        Section("Aşk", r.love)
-        Section("Kariyer & Para", r.careerMoney)
-        Section("Yakın Gelecek", r.nearFuture)
+            Section("Genel Enerji", r.generalEnergy)
+            Section("Aşk", r.love)
+            Section("Kariyer & Para", r.careerMoney)
+            Section("Yakın Gelecek", r.nearFuture)
 
-        if (r.timeWindows.isNotEmpty()) {
-            Text("Zaman Pencereleri", style = MaterialTheme.typography.titleMedium, color = Gold)
-            Spacer(Modifier.height(10.dp))
-            r.timeWindows.forEach { tw ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Text("•  ", color = Gold)
-                    Text("${tw.topic}: ${tw.window}", style = MaterialTheme.typography.bodyMedium)
+            if (r.timeWindows.isNotEmpty()) {
+                Text("Zaman Pencereleri", style = MaterialTheme.typography.titleMedium, color = Gold)
+                Spacer(Modifier.height(10.dp))
+                r.timeWindows.forEach { tw ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Text("•  ", color = Gold)
+                        Text("${tw.topic}: ${tw.window}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+                    .background(Brush.horizontalGradient(listOf(RoseSoft.copy(alpha = 0.35f), GoldDeep.copy(alpha = 0.3f))))
+                    .padding(18.dp)
+            ) {
+                Column {
+                    Text("Buket'in Dikkatini Çeken", style = MaterialTheme.typography.titleMedium, color = Rose)
+                    Spacer(Modifier.height(6.dp))
+                    Text(r.highlight, style = MaterialTheme.typography.bodyLarge)
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            Text("Bu fal Fallarım listende saklandı.", style = MaterialTheme.typography.labelMedium, color = TextMuted)
             Spacer(Modifier.height(16.dp))
-        }
-
-        Box(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-                .background(Brush.horizontalGradient(listOf(RoseSoft.copy(alpha = 0.35f), GoldDeep.copy(alpha = 0.3f))))
-                .padding(18.dp)
-        ) {
-            Column {
-                Text("Buket'in Dikkatini Çeken", style = MaterialTheme.typography.titleMedium, color = Rose)
-                Spacer(Modifier.height(6.dp))
-                Text(r.highlight, style = MaterialTheme.typography.bodyLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                GoldButton("Buket'e sor", modifier = Modifier.weight(1f), onClick = { nav.navigate("chat") })
+                OutlinedButton(
+                    onClick = { nav.popBackStack() },
+                    modifier = Modifier.weight(1f).height(54.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold)
+                ) { Text("Tamam") }
             }
+            Spacer(Modifier.height(24.dp))
         }
-        Spacer(Modifier.height(12.dp))
-        Text("Bu fal Fallarım listende saklandı.", style = MaterialTheme.typography.labelMedium, color = TextMuted)
-        Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            GoldButton("Buket'e sor", modifier = Modifier.weight(1f), onClick = { nav.navigate("chat") })
-            OutlinedButton(
-                onClick = { nav.popBackStack() },
-                modifier = Modifier.weight(1f).height(54.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold)
-            ) { Text("Tamam") }
-        }
-        Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
 private fun MockResultContent(nav: NavController, type: String) {
     val repo = remember { FortuneRepositoryHolder.repo }
+    val readingType = remember(type) { ReadingType.fromRouteString(type) }
     var reading by remember { mutableStateOf<Reading?>(null) }
     var revealed by remember { mutableStateOf(false) }
 
@@ -195,15 +202,7 @@ private fun MockResultContent(nav: NavController, type: String) {
         0.3f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "a"
     )
 
-    Box(Modifier.fillMaxSize()) {
-        Image(
-            painterResource(R.drawable.result_background), null,
-            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.35f
-        )
-        Box(Modifier.fillMaxSize().background(
-            Brush.verticalGradient(listOf(NightBg.copy(alpha = 0.85f), NightBg.copy(alpha = 0.95f))))
-        )
-
+    MysticBackground(R.drawable.bg_mystic_soft_02) {
         if (reading == null) {
             Column(
                 Modifier.align(Alignment.Center),
@@ -220,39 +219,46 @@ private fun MockResultContent(nav: NavController, type: String) {
             }
         } else {
             val r = reading!!
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                    .alpha(if (revealed) 1f else 0f).padding(20.dp)
+            Box(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                contentAlignment = Alignment.TopCenter
             ) {
-                Text("$type Falı", style = MaterialTheme.typography.headlineMedium, color = Gold)
-                Text(r.dateLabel, style = MaterialTheme.typography.labelMedium, color = TextMuted)
-                Spacer(Modifier.height(20.dp))
-                Section("Genel Enerji", r.generalEnergy)
-                Section("Aşk", r.love)
-                Section("Kariyer & Para", r.career)
-                Section("Yakın Gelecek", r.nearFuture)
-                Box(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-                        .background(Brush.horizontalGradient(listOf(RoseSoft.copy(alpha = 0.35f), GoldDeep.copy(alpha = 0.3f))))
-                        .padding(18.dp)
+                Column(
+                    Modifier.widthIn(max = ResultMaxWidth.dp).fillMaxWidth()
+                        .alpha(if (revealed) 1f else 0f).padding(20.dp)
                 ) {
-                    Column {
-                        Text("Buket'in Dikkatini Çeken", style = MaterialTheme.typography.titleMedium, color = Rose)
-                        Spacer(Modifier.height(6.dp))
-                        Text(r.highlight, style = MaterialTheme.typography.bodyLarge)
+                    ReadingArtworkHeader(readingType)
+                    Spacer(Modifier.height(18.dp))
+                    Text("$type Falı", style = MaterialTheme.typography.headlineMedium, color = Gold)
+                    Text(r.dateLabel, style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                    Spacer(Modifier.height(20.dp))
+                    Section("Genel Enerji", r.generalEnergy)
+                    Section("Aşk", r.love)
+                    Section("Kariyer & Para", r.career)
+                    Section("Yakın Gelecek", r.nearFuture)
+                    Box(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+                            .background(Brush.horizontalGradient(listOf(RoseSoft.copy(alpha = 0.35f), GoldDeep.copy(alpha = 0.3f))))
+                            .padding(18.dp)
+                    ) {
+                        Column {
+                            Text("Buket'in Dikkatini Çeken", style = MaterialTheme.typography.titleMedium, color = Rose)
+                            Spacer(Modifier.height(6.dp))
+                            Text(r.highlight, style = MaterialTheme.typography.bodyLarge)
+                        }
                     }
+                    Spacer(Modifier.height(24.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        GoldButton("Bu falı kaydet", modifier = Modifier.weight(1f), onClick = { repo.saveReading(r) })
+                        OutlinedButton(
+                            onClick = { nav.navigate("chat") },
+                            modifier = Modifier.weight(1f).height(54.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold)
+                        ) { Text("Buket'e sor") }
+                    }
+                    Spacer(Modifier.height(24.dp))
                 }
-                Spacer(Modifier.height(24.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    GoldButton("Bu falı kaydet", modifier = Modifier.weight(1f), onClick = { repo.saveReading(r) })
-                    OutlinedButton(
-                        onClick = { nav.navigate("chat") },
-                        modifier = Modifier.weight(1f).height(54.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold)
-                    ) { Text("Buket'e sor") }
-                }
-                Spacer(Modifier.height(24.dp))
             }
         }
     }

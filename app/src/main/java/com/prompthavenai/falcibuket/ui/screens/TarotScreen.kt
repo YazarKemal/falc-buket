@@ -30,43 +30,56 @@ import androidx.navigation.NavController
 import com.prompthavenai.falcibuket.R
 import com.prompthavenai.falcibuket.navigation.Routes
 import com.prompthavenai.falcibuket.ui.components.GoldButton
+import com.prompthavenai.falcibuket.ui.components.SimpleGrid
+import com.prompthavenai.falcibuket.ui.components.adaptiveColumns
 import com.prompthavenai.falcibuket.ui.theme.*
 
 @Composable
 fun TarotScreen(nav: NavController) {
     var selected by remember { mutableStateOf(setOf<Int>()) }
 
-    Column(
-        Modifier.fillMaxSize().background(NightBg).verticalScroll(rememberScrollState()).padding(20.dp)
-    ) {
-        IconButton(onClick = { nav.popBackStack() }) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri", tint = TextCream)
+    Box(Modifier.fillMaxSize().background(NightBg), contentAlignment = Alignment.TopCenter) {
+        BoxWithConstraints(Modifier.widthIn(max = 1000.dp).fillMaxSize()) {
+            val columns = adaptiveColumns(
+                availableWidth = maxWidth,
+                minCellWidth = 110.dp,
+                spacing = 12.dp,
+                max = 6
+            )
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)
+            ) {
+                IconButton(onClick = { nav.popBackStack() }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri", tint = TextCream)
+                }
+                Text("Kartlarını Seç", style = MaterialTheme.typography.headlineMedium, color = Gold)
+                Spacer(Modifier.height(8.dp))
+                Text("İçinden geldiği gibi üç kart seç. (${selected.size}/3)", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(24.dp))
+                Image(
+                    painterResource(R.drawable.tarot_selection), null,
+                    modifier = Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(24.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(Modifier.height(24.dp))
+                SimpleGrid(
+                    items = (0..5).toList(),
+                    columns = columns,
+                    horizontalSpacing = 12.dp,
+                    verticalSpacing = 14.dp
+                ) { i ->
+                    TarotCard(i, selected, Modifier.fillMaxWidth()) { toggle(selected, i) { selected = it } }
+                }
+                Spacer(Modifier.height(28.dp))
+                GoldButton(
+                    "Kartlarımı Yorumla",
+                    enabled = selected.size == 3,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { nav.navigate(Routes.result("Tarot")) }
+                )
+                Spacer(Modifier.height(20.dp))
+            }
         }
-        Text("Kartlarını Seç", style = MaterialTheme.typography.headlineMedium, color = Gold)
-        Spacer(Modifier.height(8.dp))
-        Text("İçinden geldiği gibi üç kart seç. (${selected.size}/3)", style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(24.dp))
-        Image(
-            painterResource(R.drawable.tarot_selection), null,
-            modifier = Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(24.dp)),
-            contentScale = ContentScale.Crop
-        )
-        Spacer(Modifier.height(24.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            (0..2).forEach { i -> TarotCard(i, selected, Modifier.weight(1f)) { toggle(selected, i) { selected = it } } }
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            (3..5).forEach { i -> TarotCard(i, selected, Modifier.weight(1f)) { toggle(selected, i) { selected = it } } }
-        }
-        Spacer(Modifier.height(28.dp))
-        GoldButton(
-            "Kartlarımı Yorumla",
-            enabled = selected.size == 3,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { nav.navigate(Routes.result("Tarot")) }
-        )
-        Spacer(Modifier.height(20.dp))
     }
 }
 

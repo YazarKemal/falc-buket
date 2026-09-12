@@ -71,57 +71,80 @@ fun CoffeeScreen(nav: NavController) {
     val pickCup = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { cupImage = it }
     val pickSaucer = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { saucerImage = it }
 
-    Column(
-        Modifier.fillMaxSize().background(NightBg).verticalScroll(rememberScrollState()).padding(20.dp)
-    ) {
-        IconButton(onClick = { nav.popBackStack() }) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri", tint = TextCream)
+    Box(Modifier.fillMaxSize().background(NightBg), contentAlignment = Alignment.TopCenter) {
+        BoxWithConstraints(Modifier.widthIn(max = 840.dp).fillMaxSize()) {
+            val twoColumns = maxWidth >= 640.dp
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)
+            ) {
+                IconButton(onClick = { nav.popBackStack() }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri", tint = TextCream)
+                }
+                Text("Fincanını Göster", style = MaterialTheme.typography.headlineMedium, color = Gold)
+                Spacer(Modifier.height(8.dp))
+                Text("Fincanın içini ve tabağını net şekilde fotoğraflaman yeterli.", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(24.dp))
+                Image(
+                    painterResource(R.drawable.coffee_upload), null,
+                    modifier = Modifier.fillMaxWidth().height(170.dp).clip(RoundedCornerShape(24.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(Modifier.height(24.dp))
+
+                val cupSlot: @Composable (Modifier) -> Unit = { m ->
+                    UploadSlot(
+                        label = "Fincanın İçi",
+                        uri = cupImage,
+                        modifier = m,
+                        onCamera = {
+                            pendingCameraSlot = 1
+                            cameraUri = newCameraUri().also { takePicture.launch(it) }
+                        },
+                        onGallery = {
+                            pickCup.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }
+                    )
+                }
+                val saucerSlot: @Composable (Modifier) -> Unit = { m ->
+                    UploadSlot(
+                        label = "Fincan Tabağı",
+                        uri = saucerImage,
+                        modifier = m,
+                        onCamera = {
+                            pendingCameraSlot = 2
+                            cameraUri = newCameraUri().also { takePicture.launch(it) }
+                        },
+                        onGallery = {
+                            pickSaucer.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }
+                    )
+                }
+
+                if (twoColumns) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        cupSlot(Modifier.weight(1f))
+                        saucerSlot(Modifier.weight(1f))
+                    }
+                } else {
+                    cupSlot(Modifier)
+                    Spacer(Modifier.height(16.dp))
+                    saucerSlot(Modifier)
+                }
+
+                Spacer(Modifier.height(28.dp))
+                GoldButton(
+                    "Falımı Yorumla",
+                    enabled = cupImage != null,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        val cup = cupImage ?: return@GoldButton
+                        vm.analyze(cup, saucerImage)
+                        nav.navigate(Routes.result("Kahve"))
+                    }
+                )
+                Spacer(Modifier.height(20.dp))
+            }
         }
-        Text("Fincanını Göster", style = MaterialTheme.typography.headlineMedium, color = Gold)
-        Spacer(Modifier.height(8.dp))
-        Text("Fincanın içini ve tabağını net şekilde fotoğraflaman yeterli.", style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(24.dp))
-        Image(
-            painterResource(R.drawable.coffee_upload), null,
-            modifier = Modifier.fillMaxWidth().height(170.dp).clip(RoundedCornerShape(24.dp)),
-            contentScale = ContentScale.Crop
-        )
-        Spacer(Modifier.height(24.dp))
-        UploadSlot(
-            label = "Fincanın İçi",
-            uri = cupImage,
-            onCamera = {
-                pendingCameraSlot = 1
-                cameraUri = newCameraUri().also { takePicture.launch(it) }
-            },
-            onGallery = {
-                pickCup.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            }
-        )
-        Spacer(Modifier.height(16.dp))
-        UploadSlot(
-            label = "Fincan Tabağı",
-            uri = saucerImage,
-            onCamera = {
-                pendingCameraSlot = 2
-                cameraUri = newCameraUri().also { takePicture.launch(it) }
-            },
-            onGallery = {
-                pickSaucer.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            }
-        )
-        Spacer(Modifier.height(28.dp))
-        GoldButton(
-            "Falımı Yorumla",
-            enabled = cupImage != null,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                val cup = cupImage ?: return@GoldButton
-                vm.analyze(cup, saucerImage)
-                nav.navigate(Routes.result("Kahve"))
-            }
-        )
-        Spacer(Modifier.height(20.dp))
     }
 }
 
@@ -134,6 +157,7 @@ private val uriSaver = androidx.compose.runtime.saveable.Saver<Uri?, String>(
 private fun UploadSlot(
     label: String,
     uri: Uri?,
+    modifier: Modifier = Modifier,
     onCamera: () -> Unit,
     onGallery: () -> Unit
 ) {
@@ -150,7 +174,7 @@ private fun UploadSlot(
             }.getOrNull()?.asImageBitmap()
         }
     }
-    Column {
+    Column(modifier) {
         Box(
             Modifier
                 .fillMaxWidth()
