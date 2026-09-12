@@ -1,5 +1,6 @@
 package com.prompthavenai.falcibuket.ui.components
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -23,25 +24,26 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.prompthavenai.falcibuket.R
-import com.prompthavenai.falcibuket.ui.model.ReadingType
 import com.prompthavenai.falcibuket.ui.theme.SurfacePlum
-import com.prompthavenai.falcibuket.ui.visuals.artwork
 
 /** Rounded, aspect-correct header artwork for a reading result. */
 @Composable
-fun ReadingArtworkHeader(type: ReadingType, modifier: Modifier = Modifier) {
-    val art = type.artwork()
+fun ReadingArtworkHeader(
+    @DrawableRes imageRes: Int,
+    aspectRatio: Float,
+    modifier: Modifier = Modifier
+) {
     Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
             Modifier
                 .widthIn(max = 520.dp)
                 .fillMaxWidth()
-                .aspectRatio(art.aspectRatio)
+                .aspectRatio(aspectRatio)
                 .clip(RoundedCornerShape(24.dp))
                 .background(SurfacePlum)
         ) {
             Image(
-                painterResource(art.imageRes),
+                painterResource(imageRes),
                 contentDescription = null,
                 modifier = Modifier.matchParentSize(),
                 contentScale = ContentScale.Fit

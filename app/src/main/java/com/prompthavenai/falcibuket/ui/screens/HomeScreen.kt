@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,8 +16,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.prompthavenai.falcibuket.R
-import com.prompthavenai.falcibuket.data.model.FortuneCategory
 import com.prompthavenai.falcibuket.navigation.Routes
+import com.prompthavenai.falcibuket.ui.components.FortuneCard
 import com.prompthavenai.falcibuket.ui.components.GoldButton
 import com.prompthavenai.falcibuket.ui.components.MemoryPreviewCard
 import com.prompthavenai.falcibuket.ui.components.NightPromoCard
@@ -24,16 +25,14 @@ import com.prompthavenai.falcibuket.ui.components.OverlayImageCard
 import com.prompthavenai.falcibuket.ui.components.SimpleGrid
 import com.prompthavenai.falcibuket.ui.components.adaptiveColumns
 import com.prompthavenai.falcibuket.ui.components.pressScale
+import com.prompthavenai.falcibuket.ui.model.FortuneCatalog
 import com.prompthavenai.falcibuket.ui.theme.*
 
 @Composable
 fun HomeScreen(nav: NavController) {
-    val categories = listOf(
-        FortuneCategory("coffee", "Kahve Falı", "Fincanındaki işaretleri keşfet", R.drawable.coffee_fortune),
-        FortuneCategory("tarot", "Tarot", "Kartların sana ne söylüyor?", R.drawable.tarot_fortune),
-        FortuneCategory("love", "Aşk Falı", "Kalbindeki sorulara bak", R.drawable.love_fortune),
-        FortuneCategory("career", "Kariyer & Para", "Önündeki fırsatları keşfet", R.drawable.career_fortune)
-    )
+    val popular = FortuneCatalog.popular
+    val onOpen: (com.prompthavenai.falcibuket.data.model.FortuneType) -> Unit =
+        { nav.navigate(Routes.openFortune(it)) }
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -71,7 +70,14 @@ fun HomeScreen(nav: NavController) {
                     GoldButton("Falımı Gör", onClick = { nav.navigate(Routes.result("Günlük")) })
                 }
             }
-            item { Text("Falını Seç", style = MaterialTheme.typography.titleLarge) }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Popüler Fallar", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { nav.navigate(Routes.FORTUNE_CATALOG) }) {
+                        Text("Tüm Fallar", color = Gold)
+                    }
+                }
+            }
             item {
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val columns = adaptiveColumns(
@@ -81,19 +87,12 @@ fun HomeScreen(nav: NavController) {
                         max = 4
                     )
                     SimpleGrid(
-                        items = categories,
+                        items = popular,
                         columns = columns,
                         horizontalSpacing = 16.dp,
                         verticalSpacing = 16.dp
-                    ) { cat ->
-                        OverlayImageCard(
-                            painterResource(cat.imageRes), cat.title,
-                            modifier = Modifier.fillMaxWidth().height(190.dp),
-                            onClick = { nav.navigate(routeFor(cat.id)) }
-                        ) {
-                            Text(cat.title, style = MaterialTheme.typography.titleMedium)
-                            Text(cat.subtitle, style = MaterialTheme.typography.labelMedium, color = TextMuted)
-                        }
+                    ) { type ->
+                        FortuneCard(type, onOpen = onOpen)
                     }
                 }
             }
@@ -121,6 +120,23 @@ fun HomeScreen(nav: NavController) {
                 NightPromoCard(onClick = { nav.navigate(Routes.result("Günlük")) })
             }
             item {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(SurfacePlum)
+                        .pressScale(onClick = { nav.navigate(Routes.FORTUNE_CATALOG) })
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Tüm Fallar", style = MaterialTheme.typography.titleLarge, color = Gold)
+                        Spacer(Modifier.height(4.dp))
+                        Text("28 fal türünü keşfet", style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+                    }
+                    Text("→", style = MaterialTheme.typography.headlineMedium, color = Gold)
+                }
+            }
+            item {
                 OverlayImageCard(
                     painterResource(R.drawable.premium_banner), "Buket+",
                     modifier = Modifier.fillMaxWidth().height(220.dp),
@@ -136,11 +152,4 @@ fun HomeScreen(nav: NavController) {
             item { Spacer(Modifier.height(12.dp)) }
         }
     }
-}
-
-private fun routeFor(id: String) = when (id) {
-    "coffee" -> Routes.COFFEE
-    "tarot" -> Routes.TAROT
-    "love" -> Routes.LOVE
-    else -> Routes.CAREER
 }

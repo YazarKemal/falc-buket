@@ -14,6 +14,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,7 +29,7 @@ private data class Tab(val label: String, val icon: ImageVector, val selected: C
 
 @Composable
 fun MainScreen(nav: NavController) {
-    var selected by remember { mutableIntStateOf(0) }
+    var selected by rememberSaveable { mutableIntStateOf(0) }
     val tabs = listOf(
         Tab("Ana Sayfa", Icons.Outlined.AutoAwesome, Gold),
         Tab("Fallarım", Icons.Outlined.History, Rose),

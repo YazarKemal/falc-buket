@@ -1,5 +1,6 @@
 package com.prompthavenai.falcibuket.ui.screens
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -21,13 +22,16 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.prompthavenai.falcibuket.R
 import com.prompthavenai.falcibuket.data.model.CoffeeResult
+import com.prompthavenai.falcibuket.data.model.FortuneType
 import com.prompthavenai.falcibuket.data.model.Reading
 import com.prompthavenai.falcibuket.data.repository.FortuneRepositoryHolder
 import com.prompthavenai.falcibuket.ui.components.CoffeeLoadingVisual
 import com.prompthavenai.falcibuket.ui.components.GoldButton
 import com.prompthavenai.falcibuket.ui.components.MysticBackground
 import com.prompthavenai.falcibuket.ui.components.ReadingArtworkHeader
-import com.prompthavenai.falcibuket.ui.model.ReadingType
+import com.prompthavenai.falcibuket.ui.components.ReadingPreviewNotice
+import com.prompthavenai.falcibuket.ui.model.FortuneCatalog
+import com.prompthavenai.falcibuket.ui.model.ResultTarget
 import com.prompthavenai.falcibuket.ui.theme.*
 import com.prompthavenai.falcibuket.ui.viewmodel.CoffeeUiState
 import com.prompthavenai.falcibuket.ui.viewmodel.CoffeeViewModel
@@ -42,9 +46,36 @@ private val loadingStages = listOf(
 
 private const val ResultMaxWidth = 840
 
+/** Presentation data for a generic (non-coffee) result. */
+private data class FortuneDisplay(
+    val title: String,
+    @DrawableRes val artworkRes: Int,
+    val aspectRatio: Float,
+    val historyEnabled: Boolean
+)
+
+private val DailyDisplay = FortuneDisplay(
+    title = "Günlük Falı",
+    artworkRes = R.drawable.result_background,
+    aspectRatio = 1536f / 1024f,
+    historyEnabled = true
+)
+
+private fun displayFor(type: FortuneType) = FortuneDisplay(
+    title = type.title,
+    artworkRes = type.resultArtwork.resultRes,
+    aspectRatio = type.resultArtwork.resultAspectRatio,
+    historyEnabled = type.historyEnabled
+)
+
 @Composable
-fun ReadingResultScreen(nav: NavController, type: String) {
-    if (type == "Kahve") CoffeeResultContent(nav) else MockResultContent(nav, type)
+fun ReadingResultScreen(nav: NavController, type: String, question: String? = null) {
+    when (val target = FortuneCatalog.resolveResultTarget(type)) {
+        ResultTarget.Coffee -> CoffeeResultContent(nav)
+        is ResultTarget.Fortune -> GenericResultContent(nav, displayFor(target.type), target.type.id, question)
+        ResultTarget.Daily -> GenericResultContent(nav, DailyDisplay, "Günlük", question)
+        ResultTarget.Unknown -> UnknownFortuneScreen(nav)
+    }
 }
 
 @Composable
@@ -97,7 +128,21 @@ private fun CoffeeResultContent(nav: NavController) {
                 }
             }
             is CoffeeUiState.Success -> CoffeeResultBody(nav, s.result)
-            CoffeeUiState.Idle -> {}
+            CoffeeUiState.Idle -> {
+                Column(
+                    Modifier.align(Alignment.Center).padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Fal oturumu bulunamadı. Lütfen fincan fotoğraflarını yeniden seç.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                        color = TextCream
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    GoldButton("Geri dön", onClick = { nav.popBackStack() })
+                }
+            }
         }
     }
 }
@@ -114,7 +159,10 @@ private fun CoffeeResultBody(nav: NavController, r: CoffeeResult) {
             Modifier.widthIn(max = ResultMaxWidth.dp).fillMaxWidth()
                 .alpha(if (revealed) 1f else 0f).padding(20.dp)
         ) {
-            ReadingArtworkHeader(ReadingType.COFFEE)
+            ReadingArtworkHeader(
+                FortuneType.COFFEE.resultArtwork.resultRes,
+                FortuneType.COFFEE.resultArtwork.resultAspectRatio
+            )
             Spacer(Modifier.height(18.dp))
             Text(r.title, style = MaterialTheme.typography.headlineMedium, color = Gold)
             Spacer(Modifier.height(8.dp))
@@ -169,8 +217,6 @@ private fun CoffeeResultBody(nav: NavController, r: CoffeeResult) {
                     Text(r.highlight, style = MaterialTheme.typography.bodyLarge)
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Text("Bu fal Fallarım listende saklandı.", style = MaterialTheme.typography.labelMedium, color = TextMuted)
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 GoldButton("Buket'e sor", modifier = Modifier.weight(1f), onClick = { nav.navigate("chat") })
@@ -187,14 +233,21 @@ private fun CoffeeResultBody(nav: NavController, r: CoffeeResult) {
 }
 
 @Composable
-private fun MockResultContent(nav: NavController, type: String) {
+private fun GenericResultContent(
+    nav: NavController,
+    display: FortuneDisplay,
+    repoType: String,
+    question: String?
+) {
     val repo = remember { FortuneRepositoryHolder.repo }
-    val readingType = remember(type) { ReadingType.fromRouteString(type) }
     var reading by remember { mutableStateOf<Reading?>(null) }
     var revealed by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        repo.analyzeReading(type, null).collectLatest { reading = it; revealed = true }
+    LaunchedEffect(repoType, question) {
+        repo.analyzeReading(repoType, question).collectLatest {
+            reading = it
+            revealed = true
+        }
     }
 
     val shimmer = rememberInfiniteTransition(label = "shimmer")
@@ -214,8 +267,8 @@ private fun MockResultContent(nav: NavController, type: String) {
                     contentScale = ContentScale.Crop
                 )
                 Spacer(Modifier.height(18.dp))
-                Text("Buket fallarını yorumluyor…", style = MaterialTheme.typography.titleMedium, color = Gold, textAlign = TextAlign.Center)
-                Text("Yıldızlar hizalanıyor ✨", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                Text("Örnek yorum hazırlanıyor…", style = MaterialTheme.typography.titleMedium, color = Gold, textAlign = TextAlign.Center)
+                Text("Bu bir önizlemedir ✨", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
             }
         } else {
             val r = reading!!
@@ -227,11 +280,13 @@ private fun MockResultContent(nav: NavController, type: String) {
                     Modifier.widthIn(max = ResultMaxWidth.dp).fillMaxWidth()
                         .alpha(if (revealed) 1f else 0f).padding(20.dp)
                 ) {
-                    ReadingArtworkHeader(readingType)
+                    ReadingArtworkHeader(display.artworkRes, display.aspectRatio)
                     Spacer(Modifier.height(18.dp))
-                    Text("$type Falı", style = MaterialTheme.typography.headlineMedium, color = Gold)
+                    Text(display.title, style = MaterialTheme.typography.headlineMedium, color = Gold)
                     Text(r.dateLabel, style = MaterialTheme.typography.labelMedium, color = TextMuted)
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(12.dp))
+                    ReadingPreviewNotice()
+                    Spacer(Modifier.height(16.dp))
                     Section("Genel Enerji", r.generalEnergy)
                     Section("Aşk", r.love)
                     Section("Kariyer & Para", r.career)
@@ -247,15 +302,34 @@ private fun MockResultContent(nav: NavController, type: String) {
                             Text(r.highlight, style = MaterialTheme.typography.bodyLarge)
                         }
                     }
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(16.dp))
+                    if (display.historyEnabled) {
+                        Text(
+                            "Bu fal Fallarım listende saklandı.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextMuted
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    } else {
+                        Text(
+                            "Bu önizleme kaydedilmez.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextMuted
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        GoldButton("Bu falı kaydet", modifier = Modifier.weight(1f), onClick = { repo.saveReading(r) })
+                        if (display.historyEnabled) {
+                            GoldButton("Bu falı kaydet", modifier = Modifier.weight(1f), onClick = { repo.saveReading(r) })
+                        } else {
+                            GoldButton("Buket'e sor", modifier = Modifier.weight(1f), onClick = { nav.navigate("chat") })
+                        }
                         OutlinedButton(
-                            onClick = { nav.navigate("chat") },
+                            onClick = { nav.popBackStack() },
                             modifier = Modifier.weight(1f).height(54.dp),
                             shape = RoundedCornerShape(20.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold)
-                        ) { Text("Buket'e sor") }
+                        ) { Text("Tamam") }
                     }
                     Spacer(Modifier.height(24.dp))
                 }

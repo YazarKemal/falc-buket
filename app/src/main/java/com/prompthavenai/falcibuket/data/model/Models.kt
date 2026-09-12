@@ -1,12 +1,5 @@
 package com.prompthavenai.falcibuket.data.model
 
-data class FortuneCategory(
-    val id: String,
-    val title: String,
-    val subtitle: String,
-    val imageRes: Int
-)
-
 data class ChatMessage(
     val text: String,
     val fromUser: Boolean,

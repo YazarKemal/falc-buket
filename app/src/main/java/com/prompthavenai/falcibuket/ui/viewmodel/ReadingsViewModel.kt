@@ -37,10 +37,9 @@ class ReadingsViewModel(private val backend: BuketBackend = ChatViewModel.defaul
         }
     }
 
-    fun typeImage(type: String): Int = when (type) {
-        "Kahve" -> com.prompthavenai.falcibuket.R.drawable.coffee_fortune
-        "Aşk" -> com.prompthavenai.falcibuket.R.drawable.love_fortune
-        "Kariyer" -> com.prompthavenai.falcibuket.R.drawable.career_fortune
-        else -> com.prompthavenai.falcibuket.R.drawable.result_background
+    fun typeImage(type: String): Int {
+        val fortune = com.prompthavenai.falcibuket.ui.model.FortuneCatalog.byId(type)
+            ?: com.prompthavenai.falcibuket.ui.model.FortuneCatalog.fromLegacy(type)
+        return fortune?.artworkRes ?: com.prompthavenai.falcibuket.R.drawable.result_background
     }
 }
