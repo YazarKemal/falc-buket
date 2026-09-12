@@ -41,5 +41,10 @@ export const MEMORY_EXTRACTION_INSTRUCTIONS = [
   "- Her memory Türkçe, üçüncü şahıs 'Kullanıcı ...' kalıbında, tek bir net cümle olur.",
   "- importance 0-1 arası: kimlik/hedefler yüksek (0.8-1.0), ilişki detayları orta (0.5-0.8), geçici durumlar düşük (0.2-0.5).",
   "- confidence 0-1 arası: kullanıcı açıkça söylediyse yüksek (0.9+), ima ediyorsa düşük (0.5-0.8).",
-  "- Hiçbir anlamlı bilgi yoksa boş liste döndür."
+  "- Hiçbir anlamlı bilgi yoksa boş liste döndür.",
+  "",
+  "ÇIKTI FORMATI:",
+  "- Sadece geçerli bir JSON nesnesi döndür; JSON dışında hiçbir metin yazma.",
+  "- Şema çağrı sırasında ayrıca verilir.",
+  '- Anlamlı bilgi yoksa { "memories": [] } döndür.'
 ].join("\n");

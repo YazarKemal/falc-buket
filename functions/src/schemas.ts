@@ -1,6 +1,6 @@
 /**
- * OpenAI Responses API structured output şemaları + backend tarafı validator'lar.
- * JSON, validate edilmeden Firestore'a asla yazılmaz.
+ * Sağlayıcıdan bağımsız structured output şemaları + backend validator'lar.
+ * Model çıktısı JSON olarak ayrıştırılıp doğrulanmadan Firestore'a asla yazılmaz.
  */
 
 export interface MemoryCandidate {
@@ -257,4 +257,117 @@ export function toValidatedImageDataUrl(
   const trimmed = base64.trim();
   const data = trimmed.includes(",") ? trimmed.slice(trimmed.indexOf(",") + 1) : trimmed;
   return { mime, dataUrl: `data:${mime};base64,${data}` };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Markdown ```json ... ``` çitlerini kaldırır. */
+function stripCodeFences(text: string): string {
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
+  return fenced ? fenced[1].trim() : text;
+}
+
+/**
+ * Metin içindeki tek ve belirsiz olmayan dengeli JSON nesnesini çıkarır.
+ * String kaçışlarına saygı gösterir; ikinci bir nesne varsa reddeder.
+ */
+function extractSingleObject(text: string): string | undefined {
+  const start = text.indexOf("{");
+  if (start === -1) return undefined;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        if (text.slice(i + 1).includes("{")) return undefined; // birden fazla nesne
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Model çıktısından JSON nesnesi ayrıştırır. Deterministik ve fail-closed:
+ * dizi/primitive kökleri, çoklu nesneleri ve bozuk/kesik JSON'u reddeder.
+ * Hata mesajına model çıktısı gömülmez.
+ */
+export function parseJsonObjectFromText(text: string): Record<string, unknown> {
+  const cleaned = stripCodeFences(text.replace(/^\uFEFF/, "").trim());
+  const candidate = cleaned.startsWith("{") ? cleaned : extractSingleObject(cleaned);
+  if (!candidate) {
+    throw new Error("INVALID_AI_RESPONSE: geçerli JSON nesnesi bulunamadı");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(candidate);
+  } catch {
+    throw new Error("INVALID_AI_RESPONSE: JSON ayrıştırılamadı");
+  }
+  if (!isPlainObject(parsed)) {
+    throw new Error("INVALID_AI_RESPONSE: kök bir nesne değil");
+  }
+  return parsed;
+}
+
+function assertArrayField(
+  value: unknown,
+  field: string,
+  itemCheck: (item: unknown) => boolean
+): void {
+  if (!Array.isArray(value)) {
+    throw new Error(`INVALID_AI_RESPONSE: ${field} dizi değil`);
+  }
+  for (const item of value) {
+    if (!itemCheck(item)) {
+      throw new Error(`INVALID_AI_RESPONSE: ${field} öğesi geçersiz`);
+    }
+  }
+}
+
+/**
+ * Coffee sonucunun yapısal zarfını doğrular (normalize etmeden önce).
+ * Eksik/yanlış diziler sessizce boş kabul edilmesin diye eklenmiştir.
+ * Boş diziler geçerlidir.
+ */
+export function assertCoffeeEnvelope(raw: unknown): void {
+  if (!isPlainObject(raw)) {
+    throw new Error("INVALID_AI_RESPONSE: sonuç bir nesne değil");
+  }
+  for (const key of ["title", "summary", "generalEnergy", "love", "careerMoney", "nearFuture", "highlight"]) {
+    if (!isNonEmptyString(raw[key])) {
+      throw new Error(`INVALID_AI_RESPONSE: ${key} eksik veya boş`);
+    }
+  }
+  assertArrayField(
+    raw.visualObservations,
+    "visualObservations",
+    (item) => isPlainObject(item) && isNonEmptyString(item.observation as string)
+  );
+  assertArrayField(
+    raw.timeWindows,
+    "timeWindows",
+    (item) => isPlainObject(item) && isNonEmptyString(item.topic as string) && isNonEmptyString(item.window as string)
+  );
+  assertArrayField(raw.memoryCandidates, "memoryCandidates", (item) => isPlainObject(item));
+}
+
+/** Memory extraction zarfı: `memories` bir dizi olmalı. Boş dizi geçerlidir. */
+export function assertMemoryEnvelope(raw: unknown): void {
+  if (!isPlainObject(raw) || !Array.isArray(raw.memories)) {
+    throw new Error("INVALID_AI_RESPONSE: memories dizisi yok");
+  }
 }

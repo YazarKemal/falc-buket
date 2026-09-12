@@ -1,8 +1,17 @@
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { OPENAI_API_KEY, getClient } from "../ai/openaiClient";
-import { VISION_MODEL, VISION_DAILY_LIMIT } from "../config/openaiModels";
+import { ZAI_API_KEY } from "./zaiClient";
+import { getAiProvider } from "./zaiProvider";
+import { mapProviderError, safeErrorInfo } from "./aiErrors";
+import { VISION_MODEL, VISION_DAILY_LIMIT, VISION_MAX_TOKENS } from "../config/aiModels";
 import { buketInstructions } from "../prompts";
-import { coffeeJsonSchema, validateCoffeeResult, toValidatedImageDataUrl, CoffeeResult } from "../schemas";
+import {
+  coffeeJsonSchema,
+  validateCoffeeResult,
+  toValidatedImageDataUrl,
+  parseJsonObjectFromText,
+  assertCoffeeEnvelope,
+  CoffeeResult
+} from "../schemas";
 import { buildMemoryBlock } from "../memory";
 import { topMemories, applyMemoryMerge, incrementUsage, getTodayUsage } from "../firestore/memoryRepository";
 import { saveCoffeeReading, savePredictions } from "../firestore/readingRepository";
@@ -32,9 +41,19 @@ const COFFEE_PROMPT = [
   ""
 ].join("\n");
 
+// Vision modelleri response_format desteklemez; JSON yalnızca prompt ile istenir.
+const COFFEE_JSON_OVERRIDE = [
+  "",
+  "ÇIKTI FORMATI (karakter/üslup talimatlarından ÖNCELİKLİDİR):",
+  "- Yanıtın SADECE geçerli bir JSON nesnesi olsun; JSON dışında hiçbir açıklama, selamlama veya markdown yazma.",
+  "- Tüm anlatım ilgili JSON string alanlarının İÇİNDE olsun.",
+  "- JSON şeması:",
+  JSON.stringify(coffeeJsonSchema)
+].join("\n");
+
 // TODO(production): Firebase App Check zorunlu kılınacak (enforceAppCheck: true).
 export const analyzeCoffeeReading = onCall(
-  { secrets: [OPENAI_API_KEY], region: "europe-west1", timeoutSeconds: 120, memory: "512MiB" },
+  { secrets: [ZAI_API_KEY], region: "europe-west1", timeoutSeconds: 120, memory: "512MiB" },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Oturum gerekli.");
@@ -77,43 +96,29 @@ export const analyzeCoffeeReading = onCall(
     const memories = await topMemories(uid, 8);
     const memoryBlock = buildMemoryBlock(memories);
 
-    const content: Array<{ type: string; text?: string; image_url?: string }> = [
-      {
-        type: "input_text",
-        text: [
-          userQuestion
-            ? `Kullanıcının sorusu: "${userQuestion}"`
-            : "Kullanıcı spesifik bir soru sormadı; genel bir kahve falı yorumu yap.",
-          "",
-          COFFEE_PROMPT
-        ].join("\n")
-      },
-      { type: "input_image", image_url: cupDataUrl }
-    ];
-    if (saucerDataUrl) {
-      content.push({ type: "input_image", image_url: saucerDataUrl });
-    }
+    const system = `${buketInstructions(memoryBlock)}\n${COFFEE_JSON_OVERRIDE}`;
+    const prompt = [
+      userQuestion
+        ? `Kullanıcının sorusu: "${userQuestion}"`
+        : "Kullanıcı spesifik bir soru sormadı; genel bir kahve falı yorumu yap.",
+      "",
+      COFFEE_PROMPT
+    ].join("\n");
+    const images = saucerDataUrl ? [cupDataUrl, saucerDataUrl] : [cupDataUrl];
 
-    const client = getClient();
     let result: CoffeeResult;
     try {
-      const response = await client.responses.create({
-        model: VISION_MODEL,
-        store: false,
-        instructions: buketInstructions(memoryBlock),
-        input: [{ role: "user", content: content as never }],
-        text: { format: { type: "json_schema", name: "coffee_reading", schema: coffeeJsonSchema, strict: true } },
-        max_output_tokens: 2200
+      const text = await getAiProvider().analyzeImages({
+        system,
+        prompt,
+        images,
+        maxTokens: VISION_MAX_TOKENS
       });
-      const raw = JSON.parse((response as { output_text?: string }).output_text || "{}");
+      const raw = parseJsonObjectFromText(text);
+      assertCoffeeEnvelope(raw);
       result = validateCoffeeResult(raw);
     } catch (err) {
-      if (err instanceof Error && err.message.startsWith("INVALID_AI_RESPONSE")) {
-        console.error("coffee result validation failed", err);
-        throw new HttpsError("internal", "Buket yorumu tamamlayamadı, tekrar deneyebilirsin.", { code: "AI_SERVER_ERROR" });
-      }
-      console.error("analyzeCoffeeReading OpenAI error", err);
-      throw new HttpsError("unavailable", "Buket şu anda fincanını yorumlayamadı, tekrar dener misin?", { code: "AI_SERVER_ERROR" });
+      throw mapProviderError(err, "analyzeCoffeeReading");
     }
 
     // Kalıcılık: reading + prediction ledger + memory + usage.
@@ -126,7 +131,7 @@ export const analyzeCoffeeReading = onCall(
         await applyMemoryMerge(uid, merged.toCreate, merged.toUpdate);
       }
     } catch (err) {
-      console.warn("post-reading persistence partially failed (non-fatal)", err);
+      console.warn("post-reading persistence partially failed (non-fatal)", safeErrorInfo(err));
     }
     await incrementUsage(uid, "visionCount");
 

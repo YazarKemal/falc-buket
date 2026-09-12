@@ -7,7 +7,7 @@
  * - Family-level engines are shared; per-type differences are configuration.
  *
  * This module is intentionally side-effect free so it can be unit tested
- * without Firebase or OpenAI.
+ * without Firebase or any AI provider.
  */
 
 export const READING_FAMILIES = [

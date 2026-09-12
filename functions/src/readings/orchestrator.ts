@@ -1,8 +1,8 @@
 /**
  * Generic reading orchestration skeleton.
  *
- * This is preparation only: no OpenAI call happens here yet and no engine is
- * registered. It exists so that when the first family engine is implemented
+ * This is preparation only: no AI provider call happens here yet and no engine
+ * is registered. It exists so that when the first family engine is implemented
  * there is exactly one place that authenticates, validates, dispatches by
  * family and persists. Coffee continues to use its dedicated callable.
  */
