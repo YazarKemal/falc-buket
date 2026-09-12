@@ -7,3 +7,7 @@ functions/node_modules/
 functions/lib/
 google-services.json
 serviceAccountKey.json
+asset-import/
+asset-import-new/
+*.apk
+.playwright-mcp/
