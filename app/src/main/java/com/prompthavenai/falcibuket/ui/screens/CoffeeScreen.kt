@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -18,16 +19,14 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.prompthavenai.falcibuket.navigation.Routes
-import com.prompthavenai.falcibuket.ui.components.CoffeeVideoAssets
+import com.prompthavenai.falcibuket.ui.components.CoffeeCup3DView
 import com.prompthavenai.falcibuket.ui.components.GoldButton
-import com.prompthavenai.falcibuket.ui.components.MysticLoopVideo
 import com.prompthavenai.falcibuket.ui.components.PhotoUploadSlot
 import com.prompthavenai.falcibuket.ui.components.newCameraCapture
 import com.prompthavenai.falcibuket.ui.components.uriSaver
@@ -84,107 +83,102 @@ fun CoffeeScreen(nav: NavController) {
     }
 
     Box(Modifier.fillMaxSize().background(NightBg), contentAlignment = Alignment.TopCenter) {
-        // Giriş hero'su: sessiz, döngülü arka plan videosu.
-        MysticLoopVideo(
-            videoRes = CoffeeVideoAssets.ENTRY_LOOP,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-        // Form kontrollerinin okunabilirliği için koyu/erik scrim.
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    listOf(
-                        NightBg.copy(alpha = 0.74f),
-                        NightBg.copy(alpha = 0.88f),
-                        NightBg.copy(alpha = 0.94f)
-                    )
-                )
-            )
-        )
-
         BoxWithConstraints(Modifier.widthIn(max = 840.dp).fillMaxSize()) {
             val twoColumns = maxWidth >= 640.dp
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)
-            ) {
+            Column(Modifier.fillMaxSize().padding(20.dp)) {
                 IconButton(onClick = { nav.popBackStack() }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri", tint = TextCream)
                 }
                 Text("Fincanını Göster", style = MaterialTheme.typography.headlineMedium, color = Gold)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Text("Fincanın içini ve tabağını net şekilde fotoğraflaman yeterli.", style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(14.dp))
 
-                val cupSlot: @Composable (Modifier) -> Unit = { m ->
-                    PhotoUploadSlot(
-                        label = "Fincanın İçi",
-                        uri = cupImage,
-                        modifier = m,
-                        onCamera = {
-                            deleteTempFile(pendingCapture)
-                            pendingCameraSlot = 1
-                            val capture = newCameraCapture(context, "coffee")
-                            vm.trackTempFile(capture.file)
-                            pendingCapture = capture.file
-                            cameraUri = capture.uri
-                            takePicture.launch(capture.uri)
-                        },
-                        onGallery = {
-                            pickCup.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                // 3D viewport scroll DIŞINDA tutulur; dikey sürükleme sayfayı kaydırmaz,
+                // doğrudan fincanı döndürür (içini görebilmek için).
+                CoffeeCup3DView(
+                    modifier = Modifier.fillMaxWidth().weight(1.05f).clip(RoundedCornerShape(28.dp))
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Fincanı parmağınla çevirebilirsin.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+                Spacer(Modifier.height(14.dp))
+
+                // Form içeriği kaydırılabilir.
+                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+                    val cupSlot: @Composable (Modifier) -> Unit = { m ->
+                        PhotoUploadSlot(
+                            label = "Fincanın İçi",
+                            uri = cupImage,
+                            modifier = m,
+                            onCamera = {
+                                deleteTempFile(pendingCapture)
+                                pendingCameraSlot = 1
+                                val capture = newCameraCapture(context, "coffee")
+                                vm.trackTempFile(capture.file)
+                                pendingCapture = capture.file
+                                cameraUri = capture.uri
+                                takePicture.launch(capture.uri)
+                            },
+                            onGallery = {
+                                pickCup.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
+                        )
+                    }
+                    val saucerSlot: @Composable (Modifier) -> Unit = { m ->
+                        PhotoUploadSlot(
+                            label = "Fincan Tabağı",
+                            uri = saucerImage,
+                            modifier = m,
+                            onCamera = {
+                                deleteTempFile(pendingCapture)
+                                pendingCameraSlot = 2
+                                val capture = newCameraCapture(context, "coffee")
+                                vm.trackTempFile(capture.file)
+                                pendingCapture = capture.file
+                                cameraUri = capture.uri
+                                takePicture.launch(capture.uri)
+                            },
+                            onGallery = {
+                                pickSaucer.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
+                        )
+                    }
+
+                    if (twoColumns) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            cupSlot(Modifier.weight(1f))
+                            saucerSlot(Modifier.weight(1f))
+                        }
+                    } else {
+                        cupSlot(Modifier)
+                        Spacer(Modifier.height(16.dp))
+                        saucerSlot(Modifier)
+                    }
+
+                    Spacer(Modifier.height(28.dp))
+                    GoldButton(
+                        "Falımı Yorumla",
+                        enabled = cupImage != null,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            val cup = cupImage ?: return@GoldButton
+                            vm.analyze(cup, saucerImage)
+                            nav.navigate(Routes.result("Kahve"))
                         }
                     )
-                }
-                val saucerSlot: @Composable (Modifier) -> Unit = { m ->
-                    PhotoUploadSlot(
-                        label = "Fincan Tabağı",
-                        uri = saucerImage,
-                        modifier = m,
-                        onCamera = {
-                            deleteTempFile(pendingCapture)
-                            pendingCameraSlot = 2
-                            val capture = newCameraCapture(context, "coffee")
-                            vm.trackTempFile(capture.file)
-                            pendingCapture = capture.file
-                            cameraUri = capture.uri
-                            takePicture.launch(capture.uri)
-                        },
-                        onGallery = {
-                            pickSaucer.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        }
+                    Spacer(Modifier.height(20.dp))
+                    // Source-set gating: debug'da gerçek araç, release'te no-op.
+                    CoffeePreprocessDebugTool(
+                        cup = cupImage,
+                        saucer = saucerImage,
+                        modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(Modifier.height(20.dp))
                 }
-
-                if (twoColumns) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        cupSlot(Modifier.weight(1f))
-                        saucerSlot(Modifier.weight(1f))
-                    }
-                } else {
-                    cupSlot(Modifier)
-                    Spacer(Modifier.height(16.dp))
-                    saucerSlot(Modifier)
-                }
-
-                Spacer(Modifier.height(28.dp))
-                GoldButton(
-                    "Falımı Yorumla",
-                    enabled = cupImage != null,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        val cup = cupImage ?: return@GoldButton
-                        vm.analyze(cup, saucerImage)
-                        nav.navigate(Routes.result("Kahve"))
-                    }
-                )
-                Spacer(Modifier.height(20.dp))
-                // Source-set gating: debug'da gerçek araç, release'te no-op (kod release'te yok).
-                CoffeePreprocessDebugTool(
-                    cup = cupImage,
-                    saucer = saucerImage,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(20.dp))
             }
         }
     }

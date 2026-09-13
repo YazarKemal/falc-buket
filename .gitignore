@@ -3,6 +3,7 @@ build/
 local.properties
 *.iml
 .idea/
+.kotlin/
 functions/node_modules/
 functions/lib/
 google-services.json
