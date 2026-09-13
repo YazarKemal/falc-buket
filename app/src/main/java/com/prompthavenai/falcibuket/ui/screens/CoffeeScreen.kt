@@ -15,8 +15,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -30,9 +30,11 @@ import com.prompthavenai.falcibuket.BuildConfig
 import com.prompthavenai.falcibuket.data.model.CoffeeCupRegion
 import com.prompthavenai.falcibuket.data.remote.CoffeeCupAtlasBuilder
 import com.prompthavenai.falcibuket.navigation.Routes
+import com.prompthavenai.falcibuket.ui.components.CUP_MODE_NORMAL
 import com.prompthavenai.falcibuket.ui.components.CoffeeCup3DView
 import com.prompthavenai.falcibuket.ui.components.GoldButton
 import com.prompthavenai.falcibuket.ui.components.PhotoUploadSlot
+import com.prompthavenai.falcibuket.ui.components.cupDebugModeLabel
 import com.prompthavenai.falcibuket.ui.components.newCameraCapture
 import com.prompthavenai.falcibuket.ui.components.uriSaver
 import com.prompthavenai.falcibuket.ui.debug.CoffeePreprocessDebugTool
@@ -60,7 +62,7 @@ fun CoffeeScreen(nav: NavController) {
     var centerUri by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
     var rightUri by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
     var atlas by remember { mutableStateOf<Bitmap?>(null) }
-    var debugInnerMesh by remember { mutableStateOf(false) }
+    var cupDebugMode by remember { mutableStateOf(CUP_MODE_NORMAL) }
 
     var pendingCapture by remember { mutableStateOf<File?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
@@ -130,7 +132,7 @@ fun CoffeeScreen(nav: NavController) {
                 CoffeeCup3DView(
                     modifier = Modifier.fillMaxWidth().weight(1.05f).clip(RoundedCornerShape(28.dp)),
                     interiorAtlas = atlas,
-                    debugInnerMesh = debugInnerMesh
+                    debugMode = cupDebugMode
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -144,12 +146,14 @@ fun CoffeeScreen(nav: NavController) {
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            "Teşhis: iç kaplama ağı",
+                            "Teşhis: ${cupDebugModeLabel(cupDebugMode)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextMuted,
                             modifier = Modifier.weight(1f)
                         )
-                        Switch(checked = debugInnerMesh, onCheckedChange = { debugInnerMesh = it })
+                        TextButton(onClick = { cupDebugMode = (cupDebugMode + 1) % 4 }) {
+                            Text("Değiştir")
+                        }
                     }
                 }
                 Spacer(Modifier.height(14.dp))

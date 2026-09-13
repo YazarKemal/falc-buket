@@ -12,3 +12,5 @@ asset-import/
 asset-import-new/
 *.apk
 .playwright-mcp/
+__pycache__/
+*.pyc
