@@ -27,10 +27,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.prompthavenai.falcibuket.BuildConfig
+import com.prompthavenai.falcibuket.data.local.CoffeeSessionSnapshot
+import com.prompthavenai.falcibuket.data.local.CoffeeSessionStore
 import com.prompthavenai.falcibuket.data.model.CoffeeCupRegion
 import com.prompthavenai.falcibuket.data.remote.CoffeeCupAtlasBuilder
 import com.prompthavenai.falcibuket.navigation.Routes
 import com.prompthavenai.falcibuket.ui.components.CUP_MODE_NORMAL
+import com.prompthavenai.falcibuket.ui.components.CoffeeCalibrationDialog
 import com.prompthavenai.falcibuket.ui.components.CoffeeCup3DView
 import com.prompthavenai.falcibuket.ui.components.GoldButton
 import com.prompthavenai.falcibuket.ui.components.PhotoUploadSlot
@@ -41,6 +44,9 @@ import com.prompthavenai.falcibuket.ui.debug.CoffeePreprocessDebugTool
 import com.prompthavenai.falcibuket.ui.theme.*
 import com.prompthavenai.falcibuket.ui.viewmodel.CoffeeViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -52,40 +58,95 @@ private fun deleteTempFile(file: File?) {
 fun CoffeeScreen(nav: NavController) {
     val context = LocalContext.current
     val vm: CoffeeViewModel = viewModel(viewModelStoreOwner = context as androidx.lifecycle.ViewModelStoreOwner)
+    val scope = rememberCoroutineScope()
 
     // Mevcut AI akışı (dokunulmuyor).
     var cupImage by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
     var saucerImage by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
 
-    // Yeni 3D iç-yüzey akışı: üç bölge fotoğrafı.
-    var leftUri by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
-    var centerUri by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
-    var rightUri by rememberSaveable(stateSaver = uriSaver) { mutableStateOf<Uri?>(null) }
+    // Kalıcı iç-yüzey oturumu: süreç ölümünden sonra geri yüklenir.
+    var session by remember { mutableStateOf(CoffeeSessionSnapshot.EMPTY) }
+    var restoring by remember { mutableStateOf(true) }
     var atlas by remember { mutableStateOf<Bitmap?>(null) }
+    var metrics by remember { mutableStateOf<CoffeeCupAtlasBuilder.Metrics?>(null) }
+    var calibratingRegion by remember { mutableStateOf<CoffeeCupRegion?>(null) }
+    var importError by remember { mutableStateOf<String?>(null) }
     var cupDebugMode by remember { mutableStateOf(CUP_MODE_NORMAL) }
+    val importMutex = remember { Mutex() }
 
     var pendingCapture by remember { mutableStateOf<File?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var pendingCameraSlot by remember { mutableStateOf(0) }
     var pendingRegion by remember { mutableStateOf<CoffeeCupRegion?>(null) }
 
+    LaunchedEffect(Unit) {
+        session = withContext(Dispatchers.IO) { CoffeeSessionStore.load(context) }
+        restoring = false
+    }
+
+    // Atlası yalnızca fotoğraf/kalibrasyon sürümü değişince yeniden üret.
+    LaunchedEffect(session.revisionSignature()) {
+        if (session.presentCount == 0) {
+            atlas = null
+            metrics = null
+            return@LaunchedEffect
+        }
+        val result = withContext(Dispatchers.IO) { CoffeeCupAtlasBuilder.build(context, session) }
+        atlas = result.atlas
+        metrics = result.metrics
+    }
+
+    fun importRegion(region: CoffeeCupRegion, uri: Uri, tempToDelete: File? = null) {
+        scope.launch {
+            importMutex.withLock {
+                val result = withContext(Dispatchers.IO) {
+                    val outcome = runCatching { CoffeeSessionStore.savePhoto(context, region, uri) }
+                    deleteTempFile(tempToDelete)
+                    outcome
+                }
+                result.onSuccess {
+                    session = it
+                    importError = null
+                }.onFailure {
+                    importError = "Fotoğraf alınamadı. Lütfen tekrar deneyin."
+                }
+            }
+        }
+    }
+
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val capturedUri = cameraUri
+        val tempFile = pendingCapture
         if (ok && capturedUri != null) {
             when (pendingCameraSlot) {
                 1 -> cupImage = capturedUri
                 2 -> saucerImage = capturedUri
-                3 -> leftUri = capturedUri
-                4 -> centerUri = capturedUri
-                5 -> rightUri = capturedUri
+                else -> {
+                    val region = pendingRegion
+                    if (region != null) {
+                        importRegion(region, capturedUri, tempFile)
+                    }
+                }
             }
         } else {
-            deleteTempFile(pendingCapture)
+            deleteTempFile(tempFile)
         }
         pendingCapture = null
         cameraUri = null
         pendingRegion = null
     }
+
+    fun launchCamera(slot: Int, region: CoffeeCupRegion?, prefix: String) {
+        deleteTempFile(pendingCapture)
+        pendingCameraSlot = slot
+        pendingRegion = region
+        val capture = newCameraCapture(context, prefix)
+        vm.trackTempFile(capture.file)
+        pendingCapture = capture.file
+        cameraUri = capture.uri
+        takePicture.launch(capture.uri)
+    }
+
     val pickCup = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { picked ->
         if (picked != null) { deleteTempFile(pendingCapture); pendingCapture = null; cameraUri = null; cupImage = picked }
     }
@@ -93,26 +154,43 @@ fun CoffeeScreen(nav: NavController) {
         if (picked != null) { deleteTempFile(pendingCapture); pendingCapture = null; cameraUri = null; saucerImage = picked }
     }
     val pickLeft = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { picked ->
-        if (picked != null) { deleteTempFile(pendingCapture); pendingCapture = null; cameraUri = null; leftUri = picked }
+        if (picked != null) { deleteTempFile(pendingCapture); pendingCapture = null; cameraUri = null; importRegion(CoffeeCupRegion.LEFT_INNER, picked) }
     }
     val pickCenter = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { picked ->
-        if (picked != null) { deleteTempFile(pendingCapture); pendingCapture = null; cameraUri = null; centerUri = picked }
+        if (picked != null) { deleteTempFile(pendingCapture); pendingCapture = null; cameraUri = null; importRegion(CoffeeCupRegion.CENTER_INNER, picked) }
     }
     val pickRight = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { picked ->
-        if (picked != null) { deleteTempFile(pendingCapture); pendingCapture = null; cameraUri = null; rightUri = picked }
+        if (picked != null) { deleteTempFile(pendingCapture); pendingCapture = null; cameraUri = null; importRegion(CoffeeCupRegion.RIGHT_INNER, picked) }
     }
 
-    // Üç bölge değişince atlası yerel olarak yeniden üret (ağ yok).
-    LaunchedEffect(leftUri, centerUri, rightUri) {
-        atlas = withContext(Dispatchers.IO) {
-            CoffeeCupAtlasBuilder.build(
-                context,
-                mapOf(
-                    CoffeeCupRegion.LEFT_INNER to leftUri,
-                    CoffeeCupRegion.CENTER_INNER to centerUri,
-                    CoffeeCupRegion.RIGHT_INNER to rightUri
-                )
+    val calRegion = calibratingRegion
+    if (calRegion != null) {
+        val photo = session.photos[calRegion]
+        if (photo != null) {
+            CoffeeCalibrationDialog(
+                title = "Kalibrasyon: ${regionTitle(calRegion)}",
+                photoFile = photo.file,
+                initial = session.geometryFor(calRegion),
+                onConfirm = { geometry ->
+                    scope.launch {
+                        importMutex.withLock {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching { CoffeeSessionStore.saveGeometry(context, calRegion, geometry) }
+                            }
+                            result.onSuccess {
+                                session = it
+                                importError = null
+                            }.onFailure {
+                                importError = "Kalibrasyon kaydedilemedi."
+                            }
+                        }
+                        calibratingRegion = null
+                    }
+                },
+                onDismiss = { calibratingRegion = null }
             )
+        } else {
+            LaunchedEffect(calRegion) { calibratingRegion = null }
         }
     }
 
@@ -140,6 +218,12 @@ fun CoffeeScreen(nav: NavController) {
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted
                 )
+                if (restoring) {
+                    Text("Oturum geri yükleniyor…", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                }
+                importError?.let { message ->
+                    Text(message, style = MaterialTheme.typography.bodySmall, color = Rose)
+                }
                 if (BuildConfig.DEBUG) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -155,6 +239,16 @@ fun CoffeeScreen(nav: NavController) {
                             Text("Değiştir")
                         }
                     }
+                    TextButton(onClick = {
+                        scope.launch {
+                            importMutex.withLock {
+                                withContext(Dispatchers.IO) { CoffeeSessionStore.clear(context) }
+                                session = CoffeeSessionSnapshot.EMPTY
+                                atlas = null
+                                metrics = null
+                            }
+                        }
+                    }) { Text("Oturumu temizle") }
                 }
                 Spacer(Modifier.height(14.dp))
 
@@ -163,12 +257,10 @@ fun CoffeeScreen(nav: NavController) {
                         step = 1,
                         title = "Sol Bölge",
                         guidance = "Fincanın iç yüzeyinin sol bölümünü karşıdan çek.",
-                        uri = leftUri,
-                        onCamera = {
-                            deleteTempFile(pendingCapture); pendingCameraSlot = 3; pendingRegion = CoffeeCupRegion.LEFT_INNER
-                            val capture = newCameraCapture(context, "coffee_left"); vm.trackTempFile(capture.file)
-                            pendingCapture = capture.file; cameraUri = capture.uri; takePicture.launch(capture.uri)
-                        },
+                        photoUri = session.photos[CoffeeCupRegion.LEFT_INNER]?.file?.let { Uri.fromFile(it) },
+                        needsCalibration = metrics?.needsCalibration?.get(0) == true,
+                        onCalibrate = { calibratingRegion = CoffeeCupRegion.LEFT_INNER },
+                        onCamera = { launchCamera(3, CoffeeCupRegion.LEFT_INNER, "coffee_left") },
                         onGallery = { pickLeft.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                     )
                     Spacer(Modifier.height(16.dp))
@@ -176,12 +268,10 @@ fun CoffeeScreen(nav: NavController) {
                         step = 2,
                         title = "Orta Bölge",
                         guidance = "Fincanın karşı iç yüzeyini ortalayarak çek.",
-                        uri = centerUri,
-                        onCamera = {
-                            deleteTempFile(pendingCapture); pendingCameraSlot = 4; pendingRegion = CoffeeCupRegion.CENTER_INNER
-                            val capture = newCameraCapture(context, "coffee_center"); vm.trackTempFile(capture.file)
-                            pendingCapture = capture.file; cameraUri = capture.uri; takePicture.launch(capture.uri)
-                        },
+                        photoUri = session.photos[CoffeeCupRegion.CENTER_INNER]?.file?.let { Uri.fromFile(it) },
+                        needsCalibration = metrics?.needsCalibration?.get(1) == true,
+                        onCalibrate = { calibratingRegion = CoffeeCupRegion.CENTER_INNER },
+                        onCamera = { launchCamera(4, CoffeeCupRegion.CENTER_INNER, "coffee_center") },
                         onGallery = { pickCenter.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                     )
                     Spacer(Modifier.height(16.dp))
@@ -189,12 +279,10 @@ fun CoffeeScreen(nav: NavController) {
                         step = 3,
                         title = "Sağ Bölge",
                         guidance = "Fincanın iç yüzeyinin sağ bölümünü karşıdan çek.",
-                        uri = rightUri,
-                        onCamera = {
-                            deleteTempFile(pendingCapture); pendingCameraSlot = 5; pendingRegion = CoffeeCupRegion.RIGHT_INNER
-                            val capture = newCameraCapture(context, "coffee_right"); vm.trackTempFile(capture.file)
-                            pendingCapture = capture.file; cameraUri = capture.uri; takePicture.launch(capture.uri)
-                        },
+                        photoUri = session.photos[CoffeeCupRegion.RIGHT_INNER]?.file?.let { Uri.fromFile(it) },
+                        needsCalibration = metrics?.needsCalibration?.get(2) == true,
+                        onCalibrate = { calibratingRegion = CoffeeCupRegion.RIGHT_INNER },
+                        onCamera = { launchCamera(5, CoffeeCupRegion.RIGHT_INNER, "coffee_right") },
                         onGallery = { pickRight.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                     )
 
@@ -206,11 +294,7 @@ fun CoffeeScreen(nav: NavController) {
                             label = "Fincanın İçi",
                             uri = cupImage,
                             modifier = m,
-                            onCamera = {
-                                deleteTempFile(pendingCapture); pendingCameraSlot = 1
-                                val capture = newCameraCapture(context, "coffee"); vm.trackTempFile(capture.file)
-                                pendingCapture = capture.file; cameraUri = capture.uri; takePicture.launch(capture.uri)
-                            },
+                            onCamera = { launchCamera(1, null, "coffee") },
                             onGallery = { pickCup.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                         )
                     }
@@ -219,11 +303,7 @@ fun CoffeeScreen(nav: NavController) {
                             label = "Fincan Tabağı",
                             uri = saucerImage,
                             modifier = m,
-                            onCamera = {
-                                deleteTempFile(pendingCapture); pendingCameraSlot = 2
-                                val capture = newCameraCapture(context, "coffee"); vm.trackTempFile(capture.file)
-                                pendingCapture = capture.file; cameraUri = capture.uri; takePicture.launch(capture.uri)
-                            },
+                            onCamera = { launchCamera(2, null, "coffee") },
                             onGallery = { pickSaucer.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                         )
                     }
@@ -259,12 +339,20 @@ fun CoffeeScreen(nav: NavController) {
     }
 }
 
+private fun regionTitle(region: CoffeeCupRegion): String = when (region) {
+    CoffeeCupRegion.LEFT_INNER -> "Sol Bölge"
+    CoffeeCupRegion.CENTER_INNER -> "Orta Bölge"
+    CoffeeCupRegion.RIGHT_INNER -> "Sağ Bölge"
+}
+
 @Composable
 private fun RegionCapture(
     step: Int,
     title: String,
     guidance: String,
-    uri: Uri?,
+    photoUri: Uri?,
+    needsCalibration: Boolean,
+    onCalibrate: () -> Unit,
     onCamera: () -> Unit,
     onGallery: () -> Unit
 ) {
@@ -274,9 +362,14 @@ private fun RegionCapture(
     Spacer(Modifier.height(8.dp))
     PhotoUploadSlot(
         label = title,
-        uri = uri,
+        uri = photoUri,
         modifier = Modifier.fillMaxWidth(),
         onCamera = onCamera,
         onGallery = onGallery
     )
+    if (BuildConfig.DEBUG && photoUri != null && needsCalibration) {
+        TextButton(onClick = onCalibrate) {
+            Text("Rim'i elle kalibre et", color = Gold)
+        }
+    }
 }

@@ -105,15 +105,15 @@ private fun createAtlasOverlayMaterial(
         roughness = 1f,
         reflectance = 0f
     )
-    materialInstance.setDoubleSided(true)
-    logD("ATLAS_MATERIAL_CREATED ${atlas.width}x${atlas.height} srgb=true opaque=true")
+    materialInstance.setDoubleSided(false)
+    logD("ATLAS_MATERIAL_CREATED ${atlas.width}x${atlas.height} srgb=true opaque=true singleSided=true")
     return OverlayMaterial(texture, materialInstance)
 }
 
 private fun createMagentaOverlayMaterial(materialLoader: MaterialLoader): OverlayMaterial {
     val materialInstance = materialLoader.createUnlitColorInstance(Color(1f, 0f, 1f, 1f))
-    materialInstance.setDoubleSided(true)
-    logD("MAGENTA_MATERIAL_CREATED doubleSided=true")
+    materialInstance.setDoubleSided(false)
+    logD("MAGENTA_MATERIAL_CREATED singleSided=true")
     return OverlayMaterial(null, materialInstance)
 }
 
@@ -216,8 +216,10 @@ fun CoffeeCup3DView(
     val showOuter = effectiveMode != CUP_MODE_INNER_ONLY_MAGENTA
     val atlasReady = interiorAtlas != null && !interiorAtlas.isRecycled
 
-    val overlayMaterial = remember(engine, materialLoader, interiorAtlas, effectiveMode) {
-        when (effectiveMode) {
+    val overlayMaterial = remember(engine, materialLoader, interiorAtlas, effectiveMode, innerInstance) {
+        if (innerInstance == null) {
+            null
+        } else when (effectiveMode) {
             CUP_MODE_INNER_ONLY_MAGENTA, CUP_MODE_OUTER_INNER_MAGENTA ->
                 createMagentaOverlayMaterial(materialLoader)
             CUP_MODE_OUTER_INNER_ATLAS ->
@@ -236,6 +238,16 @@ fun CoffeeCup3DView(
     }
 
     val previousHolder = remember { arrayOfNulls<OverlayMaterial>(1) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            val last = previousHolder[0]
+            if (last != null) {
+                destroyOverlayMaterial(engine, materialLoader, last)
+                previousHolder[0] = null
+            }
+        }
+    }
 
     Box(
         modifier = modifier.background(
