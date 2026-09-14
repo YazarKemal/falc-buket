@@ -22,13 +22,18 @@ object CoffeePhotometric {
     const val MIN_GAIN = 0.85f
     const val MAX_GAIN = 1.18f
 
+    /** Identity toleransı: hem kazanç hem ofset bu eşiğin altında olmalıdır. */
+    const val IDENTITY_EPS = 1e-5f
+
     class Correction(
         val gain: FloatArray,
         val offset: FloatArray
     ) {
         val isIdentity: Boolean
-            get() = abs(gain[0] - 1f) < 1e-5f && abs(gain[1] - 1f) < 1e-5f &&
-                abs(gain[2] - 1f) < 1e-5f
+            get() = abs(gain[0] - 1f) < IDENTITY_EPS && abs(gain[1] - 1f) < IDENTITY_EPS &&
+                abs(gain[2] - 1f) < IDENTITY_EPS &&
+                abs(offset[0]) < IDENTITY_EPS && abs(offset[1]) < IDENTITY_EPS &&
+                abs(offset[2]) < IDENTITY_EPS
 
         companion object {
             val IDENTITY = Correction(floatArrayOf(1f, 1f, 1f), floatArrayOf(0f, 0f, 0f))
@@ -108,6 +113,7 @@ object CoffeePhotometric {
         val afterAvg = (after / count).toFloat() / 255f
         val finite = beforeAvg.isFinite() && afterAvg.isFinite()
         val accepted = finite && candidate.gain.all { it.isFinite() } &&
+            candidate.offset.all { it.isFinite() } &&
             afterAvg < beforeAvg - MIN_IMPROVEMENT
         return Decision(
             beforeAvg,

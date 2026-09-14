@@ -5,9 +5,7 @@ import android.net.Uri
 import com.prompthavenai.falcibuket.data.model.CoffeeCupPhotoGeometry
 import com.prompthavenai.falcibuket.data.model.CoffeeCupRegion
 import com.prompthavenai.falcibuket.data.remote.ImageCompressor
-import org.json.JSONObject
 import java.io.File
-import java.util.UUID
 
 /** Kalıcılaştırılmış tek bir bölge fotoğrafı (uygulama-özel depolama). */
 data class CoffeeSessionPhoto(
@@ -48,12 +46,13 @@ data class CoffeeSessionSnapshot(
  * Üç bölge fotoğrafını ve kalibrasyonlarını uygulama-özel kalıcı depolamada
  * tutar. Fotoğraflar seçilir seçilmez sanitize edilmiş JPEG olarak kopyalanır;
  * süreç yeniden başladığında hazır bölgeler otomatik geri yüklenir.
+ *
+ * Dosya/JSON mantığı [CoffeeSessionFiles] içindedir (Android'siz, test edilebilir);
+ * bu nesne yalnızca Context köprüsü ve görüntü sıkıştırmayı sağlar.
  */
 object CoffeeSessionStore {
 
     private const val DIR_NAME = "coffee_session"
-    private const val META_NAME = "session.json"
-    private const val VERSION = 1
 
     /** Tüm okuma-değiştirme-yazma işlemlerini serileştirir (kayıp güncelleme yok). */
     private val lock = Any()
@@ -61,118 +60,35 @@ object CoffeeSessionStore {
     fun sessionDir(context: Context): File = File(context.filesDir, DIR_NAME)
 
     fun photoFile(context: Context, region: CoffeeCupRegion): File =
-        File(sessionDir(context), fileName(region))
+        File(sessionDir(context), CoffeeSessionFiles.fileName(region))
 
-    private fun fileName(region: CoffeeCupRegion): String = when (region) {
-        CoffeeCupRegion.LEFT_INNER -> "left.jpg"
-        CoffeeCupRegion.CENTER_INNER -> "center.jpg"
-        CoffeeCupRegion.RIGHT_INNER -> "right.jpg"
-    }
+    private fun files(context: Context): CoffeeSessionFiles = CoffeeSessionFiles(sessionDir(context))
 
     fun load(context: Context): CoffeeSessionSnapshot = synchronized(lock) {
-        loadLocked(context)
-    }
-
-    private fun loadLocked(context: Context): CoffeeSessionSnapshot {
-        val dir = sessionDir(context)
-        if (!dir.exists()) return CoffeeSessionSnapshot.EMPTY
-        val meta = readMeta(context)
-        val photos = LinkedHashMap<CoffeeCupRegion, CoffeeSessionPhoto>()
-        val geometries = LinkedHashMap<CoffeeCupRegion, CoffeeCupPhotoGeometry>()
-        for (region in CoffeeCupRegion.entries) {
-            val file = photoFile(context, region)
-            if (!file.exists() || file.length() <= 0L) continue
-            val regionMeta = meta?.optJSONObject(region.name)
-            val revision = regionMeta?.optString("revision")?.takeIf { it.isNotBlank() }
-                ?: deriveRevision(file)
-            photos[region] = CoffeeSessionPhoto(region, file, revision)
-            val geometry = readGeometry(regionMeta)
-            if (geometry != null) geometries[region] = geometry
-        }
-        return CoffeeSessionSnapshot(photos, geometries)
+        files(context).load()
     }
 
     /** Seçilen fotoğrafı hemen sanitize edilmiş JPEG olarak kalıcılaştırır. */
     fun savePhoto(context: Context, region: CoffeeCupRegion, uri: Uri): CoffeeSessionSnapshot =
         synchronized(lock) {
-            val processed = ImageCompressor.process(context, uri, maxEdge = com.prompthavenai.falcibuket.data.model.CoffeeCupAtlas.PHOTO_MAX_EDGE)
-            val dir = sessionDir(context)
-            if (!dir.exists()) dir.mkdirs()
-            val target = photoFile(context, region)
-            val temp = File(dir, "${fileName(region)}.tmp")
-            temp.writeBytes(processed.jpeg)
-            if (!temp.renameTo(target)) {
-                temp.copyTo(target, overwrite = true)
-                temp.delete()
-            }
-            val meta = readMeta(context) ?: JSONObject()
-            meta.put("version", VERSION)
-            val regions = meta.optJSONObject("regions") ?: JSONObject().also { meta.put("regions", it) }
-            val entry = JSONObject()
-            entry.put("revision", UUID.randomUUID().toString())
-            regions.put(region.name, entry)
-            writeMeta(context, meta)
-            loadLocked(context)
+            val processed = ImageCompressor.process(
+                context, uri,
+                maxEdge = com.prompthavenai.falcibuket.data.model.CoffeeCupAtlas.PHOTO_MAX_EDGE
+            )
+            files(context).savePhotoBytes(region, processed.jpeg)
         }
 
     fun saveGeometry(
         context: Context,
         region: CoffeeCupRegion,
-        geometry: CoffeeCupPhotoGeometry
+        geometry: CoffeeCupPhotoGeometry,
+        expectedPhotoRevision: String? = null
     ): CoffeeSessionSnapshot = synchronized(lock) {
-        val dir = sessionDir(context)
-        if (!dir.exists()) dir.mkdirs()
-        val meta = readMeta(context) ?: JSONObject()
-        meta.put("version", VERSION)
-        val regions = meta.optJSONObject("regions") ?: JSONObject().also { meta.put("regions", it) }
-        val entry = regions.optJSONObject(region.name) ?: JSONObject().also { regions.put(region.name, it) }
-        entry.put("cx", geometry.rimCenterX.toDouble())
-        entry.put("cy", geometry.rimCenterY.toDouble())
-        entry.put("rx", geometry.rimRadiusX.toDouble())
-        entry.put("ry", geometry.rimRadiusY.toDouble())
-        entry.put("rot", geometry.rimRotation.toDouble())
-        writeMeta(context, meta)
-        loadLocked(context)
+        files(context).saveGeometry(region, geometry, expectedPhotoRevision)
     }
 
     /** Tüm oturum fotoğraflarını ve metadatasını siler. */
     fun clear(context: Context) = synchronized(lock) {
-        val dir = sessionDir(context)
-        if (dir.exists()) dir.deleteRecursively()
-    }
-
-    private fun readGeometry(regionMeta: JSONObject?): CoffeeCupPhotoGeometry? {
-        if (regionMeta == null) return null
-        if (!regionMeta.has("cx") || !regionMeta.has("cy") || !regionMeta.has("rx") || !regionMeta.has("ry")) {
-            return null
-        }
-        val geometry = CoffeeCupPhotoGeometry(
-            rimCenterX = regionMeta.optDouble("cx").toFloat(),
-            rimCenterY = regionMeta.optDouble("cy").toFloat(),
-            rimRadiusX = regionMeta.optDouble("rx").toFloat(),
-            rimRadiusY = regionMeta.optDouble("ry").toFloat(),
-            rimRotation = regionMeta.optDouble("rot", 0.0).toFloat()
-        )
-        return if (geometry.isValid()) geometry else null
-    }
-
-    private fun deriveRevision(file: File): String = "${file.length()}-${file.lastModified()}"
-
-    private fun readMeta(context: Context): JSONObject? {
-        val file = File(sessionDir(context), META_NAME)
-        if (!file.exists()) return null
-        return runCatching { JSONObject(file.readText()) }.getOrNull()
-    }
-
-    private fun writeMeta(context: Context, meta: JSONObject) {
-        val dir = sessionDir(context)
-        if (!dir.exists()) dir.mkdirs()
-        val target = File(dir, META_NAME)
-        val temp = File(dir, "$META_NAME.tmp")
-        temp.writeText(meta.toString())
-        if (!temp.renameTo(target)) {
-            temp.copyTo(target, overwrite = true)
-            temp.delete()
-        }
+        files(context).clear()
     }
 }

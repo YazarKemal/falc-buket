@@ -87,4 +87,48 @@ class CoffeePhotometricTest {
         assertEquals(CoffeePhotometric.Decision.Status.NO_OVERLAP, decision.status)
         assertFalse(decision.accepted)
     }
+
+    @Test
+    fun identityRequiresZeroOffsets() {
+        assertTrue(CoffeePhotometric.Correction.IDENTITY.isIdentity)
+        val offsetOnly = CoffeePhotometric.Correction(
+            floatArrayOf(1f, 1f, 1f),
+            floatArrayOf(0f, 0.05f, 0f)
+        )
+        assertFalse("offset must break identity", offsetOnly.isIdentity)
+        val tinyOffset = CoffeePhotometric.Correction(
+            floatArrayOf(1f, 1f, 1f),
+            floatArrayOf(0f, CoffeePhotometric.IDENTITY_EPS / 2f, 0f)
+        )
+        assertTrue("sub-epsilon offset is identity", tinyOffset.isIdentity)
+    }
+
+    @Test
+    fun offsetOnlyCorrectionChangesValidPixels() {
+        val source = uniformDiskRgb(100, 100, 100)
+        val offsetOnly = CoffeePhotometric.Correction(
+            floatArrayOf(1f, 1f, 1f),
+            floatArrayOf(0.2f, 0f, 0f)
+        )
+        assertFalse(offsetOnly.isIdentity)
+        val corrected = CoffeePhotometric.applyToDisk(source, offsetOnly)
+        for (i in 0 until size * size) {
+            assertTrue(
+                "offset must brighten red channel",
+                ((corrected.image.argb[i] ushr 16) and 0xFF) > 100
+            )
+        }
+    }
+
+    @Test
+    fun nonFiniteOffsetIsRejected() {
+        val anchor = uniformDiskRgb(200, 200, 200)
+        val source = uniformDiskRgb(160, 160, 160)
+        val bad = CoffeePhotometric.Correction(
+            floatArrayOf(1.1f, 1.1f, 1.1f),
+            floatArrayOf(Float.NaN, 0f, 0f)
+        )
+        val decision = CoffeePhotometric.evaluateAndGate(anchor, source, bad)
+        assertFalse("non-finite offset must not be accepted", decision.accepted)
+    }
 }

@@ -38,6 +38,16 @@ object CoffeeCanonicalReconstruction {
     const val SIDE_ANGLE_LEFT = 0.5f
     const val SIDE_ANGLE_RIGHT = 0.0f
 
+    /** Sol/sağ tercih geçiş genişliği (cos eşiği); sürekli, periyodik geçiş. */
+    const val SIDE_TRANSITION_COS = 0.25f
+
+    /** Dar rim kenarı yumuşatma kalınlığı (kanonik piksel). İç geometri değişmez. */
+    const val RIM_FEATHER_PIXELS = 1.0f
+
+    /** Zemin merkezi: yarıçap bağımsız ortalama ve ona geçiş yarıçapları (kanonik). */
+    const val FLOOR_CENTER_BLEND_R = 0.025f
+    const val FLOOR_CENTER_AVERAGE_R = 0.0125f
+
     const val ALIGN_BINS = 180
     const val ALIGN_R_MIN = 0.20f
     const val ALIGN_R_MAX = 0.90f
@@ -208,7 +218,8 @@ object CoffeeCanonicalReconstruction {
         return CanonicalDisk(PixelBuffer(size, size, argb), valid, size)
     }
 
-    fun sampleDiskMasked(disk: CanonicalDisk, dx: Float, dy: Float): Int? {
+    fun sampleDiskMasked(disk: CanonicalDisk, dx: Float, dy: Float, supportOut: FloatArray? = null): Int? {
+        if (supportOut != null) supportOut[0] = 0f
         if (dx * dx + dy * dy > 1f) return null
         val size = disk.size
         val px = diskPixelX(dx, size)
@@ -241,6 +252,7 @@ object CoffeeCanonicalReconstruction {
                 sw += weight
             }
         }
+        if (supportOut != null) supportOut[0] = sw
         if (sw <= EPS) return null
         return argb(
             (sr / sw + 0.5f).toInt().coerceIn(0, 255),
@@ -350,22 +362,18 @@ object CoffeeCanonicalReconstruction {
         val t = smoothstep(CENTER_DOMINANT_END, CENTER_WALL_END, radius)
         val center = CENTER_CORE + (CENTER_WALL - CENTER_CORE) * t
         val sideTotal = (1f - center).coerceAtLeast(0f)
-        val prefL = EPS + sidePreference(angleTurns, SIDE_ANGLE_LEFT)
-        val prefR = EPS + sidePreference(angleTurns, SIDE_ANGLE_RIGHT)
-        val sumPref = prefL + prefR
-        val nearSide = sideTotal * 0.5f
-        val rimSideL = sideTotal * prefL / sumPref
-        val rimSideR = sideTotal * prefR / sumPref
-        out[0] = nearSide + (rimSideL - nearSide) * t
+        // Periyodik ve sürekli yan tercih: cos(2πu) → smoothstep. ±π sarmasında
+        // ve sol/sağ geçişlerinde ani sıçrama yoktur; türev de süreklidir.
+        val q = cos(angleTurns * 2f * PI.toFloat())
+        val z = ((q + SIDE_TRANSITION_COS) / (2f * SIDE_TRANSITION_COS)).coerceIn(0f, 1f)
+        val prefRight = z * z * (3f - 2f * z)
+        val prefLeft = 1f - prefRight
+        val flat = sideTotal * 0.5f * (1f - t)
+        val radial = sideTotal * t
+        out[0] = flat + radial * prefLeft
         out[1] = center
-        out[2] = nearSide + (rimSideR - nearSide) * t
+        out[2] = flat + radial * prefRight
         normalizeInto(out)
-    }
-
-    private fun sidePreference(angleTurns: Float, sideAngle: Float): Float {
-        val d = angleTurns - sideAngle
-        val c = cos(d * 2f * PI.toFloat())
-        return if (c <= 0f) 0f else c * c
     }
 
     class FusionResult(
@@ -461,13 +469,21 @@ object CoffeeCanonicalReconstruction {
         floorV: Float,
         floorDiskR: Float = FLOOR_DISK_R
     ): AtlasPixels {
-        val floorRows = (floorV * height).toInt().coerceIn(1, height - 1)
+        require(width > 0) { "width must be positive" }
+        require(height > 0) { "height must be positive" }
+        require(width.toLong() * height.toLong() <= Int.MAX_VALUE.toLong()) { "atlas dimensions overflow" }
+        require(floorV.isFinite() && floorV > 0f && floorV < 1f) { "floorV must be in (0,1)" }
+        require(floorDiskR.isFinite() && floorDiskR > 0f && floorDiskR < 1f) { "floorDiskR must be in (0,1)" }
+
+        val floorRows = if (height == 1) 1 else (floorV * height).toInt().coerceIn(1, height - 1)
         val wallRows = height - floorRows
         val floorPixels = IntArray(width * floorRows)
         val wallPixels = IntArray(width * wallRows)
         var floorValid = 0
         var wallValid = 0
         val twoPi = 2f * PI.toFloat()
+        val centerLinear = centerAverageLinear(fused)
+        val support = FloatArray(1)
         for (y in 0 until height) {
             val isFloor = y < floorRows
             // Her bant kendi içinde tam [0,1] aralığına normalize edilir; böylece
@@ -488,11 +504,18 @@ object CoffeeCanonicalReconstruction {
                 val theta = twoPi * u
                 val dx = diskR * cos(theta)
                 val dy = diskR * sin(theta)
-                val sampled = sampleDiskMasked(fused, dx, dy)
+                val sampled = sampleDiskMasked(fused, dx, dy, support)
                 if (sampled != null) {
                     if (isFloor) floorValid++ else wallValid++
                 }
-                target[targetBase + x] = sampled ?: IVORY
+                var out = sampled ?: IVORY
+                if (sampled != null) {
+                    if (isFloor) out = applyCenterBlend(out, diskR, centerLinear)
+                    // Yalnızca GÖRÜNTÜLEME kenarını yumuşat: geçerlilik ve kapsam
+                    // sayacı etkilenmez, maske dışından renk sızmaz.
+                    out = blendTowardIvory(out, rimAlpha(diskR, fused.size) * validityAlpha(support[0]))
+                }
+                target[targetBase + x] = out
             }
         }
         val atlas = IntArray(width * height)
@@ -500,8 +523,93 @@ object CoffeeCanonicalReconstruction {
         System.arraycopy(wallPixels, 0, atlas, floorPixels.size, wallPixels.size)
         return AtlasPixels(
             width, height, floorRows, floorPixels, wallPixels, atlas,
-            100f * floorValid / floorPixels.size,
-            100f * wallValid / wallPixels.size
+            if (floorPixels.isEmpty()) 0f else 100f * floorValid / floorPixels.size,
+            if (wallPixels.isEmpty()) 0f else 100f * wallValid / wallPixels.size
+        )
+    }
+
+    /** Kanonik r≈1 kenarında dar, yalnızca-içe yumuşatma katsayısı. */
+    private fun rimAlpha(r: Float, diskSize: Int): Float {
+        if (diskSize <= 0) return 1f
+        val f = 2f * RIM_FEATHER_PIXELS / diskSize
+        if (f <= 0f) return 1f
+        val t = ((1f - r) / f).coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
+    }
+
+    /** Maskeli örnekleme desteğine göre kenar katsayısı (maske dışı katkı sızmaz). */
+    private fun validityAlpha(support: Float): Float {
+        val s = support.coerceIn(0f, 1f)
+        return s * s * (3f - 2f * s)
+    }
+
+    private fun blendTowardIvory(color: Int, alpha: Float): Int {
+        if (alpha >= 1f) return color
+        if (alpha <= 0f) return IVORY
+        val lr = linearFromSrgb((color ushr 16) and 0xFF)
+        val lg = linearFromSrgb((color ushr 8) and 0xFF)
+        val lb = linearFromSrgb(color and 0xFF)
+        val ir = linearFromSrgb((IVORY ushr 16) and 0xFF)
+        val ig = linearFromSrgb((IVORY ushr 8) and 0xFF)
+        val ib = linearFromSrgb(IVORY and 0xFF)
+        return argb(
+            srgbFromLinear(alpha * lr + (1f - alpha) * ir),
+            srgbFromLinear(alpha * lg + (1f - alpha) * ig),
+            srgbFromLinear(alpha * lb + (1f - alpha) * ib)
+        )
+    }
+
+    /**
+     * Merkez (r < FLOOR_CENTER_AVERAGE_R) geçerli piksellerin açı-bağımsız,
+     * lineer-ışık ağırlıklı ortalaması. Polar açı r→0'da önemsizleşir.
+     */
+    private fun centerAverageLinear(fused: CanonicalDisk): FloatArray? {
+        val size = fused.size
+        if (size <= 0) return null
+        val ra = FLOOR_CENTER_AVERAGE_R
+        val raSq = ra * ra
+        val step = 2f / size
+        val maxOffset = kotlin.math.ceil(ra / step).toInt() + 1
+        val mid = size / 2
+        var lr = 0f
+        var lg = 0f
+        var lb = 0f
+        var wsum = 0f
+        for (oy in (mid - maxOffset)..(mid + maxOffset)) {
+            if (oy < 0 || oy >= size) continue
+            val dy = canonicalDy(oy, size)
+            for (ox in (mid - maxOffset)..(mid + maxOffset)) {
+                if (ox < 0 || ox >= size) continue
+                val idx = oy * size + ox
+                if (!fused.valid[idx]) continue
+                val dx = canonicalDx(ox, size)
+                val rSq = dx * dx + dy * dy
+                if (rSq >= raSq) continue
+                val k = 1f - rSq / raSq
+                val w = k * k
+                val p = fused.image.argb[idx]
+                lr += w * linearFromSrgb((p ushr 16) and 0xFF)
+                lg += w * linearFromSrgb((p ushr 8) and 0xFF)
+                lb += w * linearFromSrgb(p and 0xFF)
+                wsum += w
+            }
+        }
+        if (wsum <= EPS) return null
+        return floatArrayOf(lr / wsum, lg / wsum, lb / wsum)
+    }
+
+    /** r < FLOOR_CENTER_BLEND_R'de açı-bağımsız merkez ortalamasına yumuşak geçiş. */
+    private fun applyCenterBlend(color: Int, r: Float, centerLinear: FloatArray?): Int {
+        if (centerLinear == null) return color
+        val b = smoothstep(0f, FLOOR_CENTER_BLEND_R, r)
+        if (b >= 1f) return color
+        val lr = linearFromSrgb((color ushr 16) and 0xFF)
+        val lg = linearFromSrgb((color ushr 8) and 0xFF)
+        val lb = linearFromSrgb(color and 0xFF)
+        return argb(
+            srgbFromLinear((1f - b) * centerLinear[0] + b * lr),
+            srgbFromLinear((1f - b) * centerLinear[1] + b * lg),
+            srgbFromLinear((1f - b) * centerLinear[2] + b * lb)
         )
     }
 
@@ -511,12 +619,18 @@ object CoffeeCanonicalReconstruction {
      */
     fun renderFloorCartesian(fused: CanonicalDisk, size: Int, floorDiskR: Float = FLOOR_DISK_R): IntArray {
         val out = IntArray(size * size)
+        val centerLinear = centerAverageLinear(fused)
         for (oy in 0 until size) {
             val dy = floorDiskR - 2f * floorDiskR * (oy + 0.5f) / size
             val rowBase = oy * size
             for (ox in 0 until size) {
                 val dx = -floorDiskR + 2f * floorDiskR * (ox + 0.5f) / size
-                out[rowBase + ox] = sampleDiskMasked(fused, dx, dy) ?: IVORY
+                val sampled = sampleDiskMasked(fused, dx, dy)
+                out[rowBase + ox] = if (sampled == null) {
+                    IVORY
+                } else {
+                    applyCenterBlend(sampled, kotlin.math.sqrt(dx * dx + dy * dy), centerLinear)
+                }
             }
         }
         return out

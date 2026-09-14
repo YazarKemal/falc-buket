@@ -175,7 +175,9 @@ fun CoffeeScreen(nav: NavController) {
                     scope.launch {
                         importMutex.withLock {
                             val result = withContext(Dispatchers.IO) {
-                                runCatching { CoffeeSessionStore.saveGeometry(context, calRegion, geometry) }
+                                runCatching {
+                                    CoffeeSessionStore.saveGeometry(context, calRegion, geometry, photo.revision)
+                                }
                             }
                             result.onSuccess {
                                 session = it
@@ -367,9 +369,9 @@ private fun RegionCapture(
         onCamera = onCamera,
         onGallery = onGallery
     )
-    if (BuildConfig.DEBUG && photoUri != null && needsCalibration) {
+    if (photoUri != null && needsCalibration) {
         TextButton(onClick = onCalibrate) {
-            Text("Rim'i elle kalibre et", color = Gold)
+            Text("Fincan kenarını hizala", color = Gold)
         }
     }
 }
